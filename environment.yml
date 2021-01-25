@@ -1,0 +1,14 @@
+name: ndcgws
+channels:
+    - pytorch
+dependencies:
+    - python=3.8
+    - pytorch>=1.5
+    - torchvision>=0.6
+    - matplotlib
+    - pandas
+    - seaborn
+    - scikit-learn
+    - pip
+    - pip:
+        - python-Levenshtein 
