@@ -18,7 +18,7 @@ class StringEmbedding(nn.Module):
         seq_lens = x.shape[1] - (x==self.padding_idx).sum(1)
         packed = pack_padded_sequence(y, seq_lens.tolist(), batch_first=True, enforce_sorted=False)
 
-        h0 = torch.zeros(2*self.num_layers, y.shape[1], self.hidden_size).to(y.device)
+        h0 = torch.zeros(2*self.num_layers, y.shape[0], self.hidden_size).to(y.device)
         output, hn = self.GRU(packed, h0)
         unpacked, lens_unpacked = pad_packed_sequence(output, batch_first=True)
 
