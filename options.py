@@ -25,11 +25,17 @@ def get_args_parser():
     parser.add_argument('--tau', default=1e-3, type=float, help='Smooth factor')
     parser.add_argument('--penalize', action='store_true', help='Penalize the relevance score')
 
+    # Checkpoint
+    parser.add_argument('--save', '-s', type=str, default=None, help='Folder to save checkpoints.')
+    parser.add_argument('--load', '-l', type=str, default=None, help='Checkpoint path to resume / test.')
+    parser.add_argument('--test', '-t', action='store_true', help='Test only flag.')
+    parser.add_argument('--early_stop', '-es', type=int, default=50, help='Early stopping epochs.')
+
     # Others
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=42, type=int)
-    parser.add_argument('--num_workers', default=2, type=int)
+    parser.add_argument('--num_workers', default=8, type=int)
     parser.add_argument('--out_dim', default=64, type=int)
 
     return parser.parse_args()

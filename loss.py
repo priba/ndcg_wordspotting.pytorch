@@ -127,3 +127,14 @@ def map_loss(query: Tensor, target: Tensor, gallery: Tensor = None, k: float = 1
     if torch.numel(ap) == 0:
         return 1
     return 1-ap.mean()
+
+class L1Loss(nn.Module):
+    def __init__(self):
+        super(L1Loss, self).__init__()
+
+    def forward(self, query: Tensor, gallery: Tensor) -> Tensor:
+        return l1_loss(query, gallery)
+
+def l1_loss(query: Tensor, gallery: Tensor):
+    loss = torch.abs(query - gallery).sum(-1)
+    return loss.mean()

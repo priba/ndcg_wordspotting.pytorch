@@ -58,10 +58,10 @@ class ImageEmbedding(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(pooling_output_size, 4096),
             nn.ReLU(),
-            nn.Dropout(0.5),
+            nn.Dropout(0.1),
             nn.Linear(4096, 4096),
             nn.ReLU(),
-            nn.Dropout(0.5),
+            nn.Dropout(0.1),
             nn.Linear(4096, n_out)
         )
 
@@ -69,5 +69,5 @@ class ImageEmbedding(nn.Module):
         y = self.conv(x)
         y = self.spp(y)
         y = self.mlp(y)
-        return y
+        return F.normalize(y, dim=-1)
 

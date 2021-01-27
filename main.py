@@ -1,12 +1,15 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torchvision
 import time
 import matplotlib.pyplot as plt
 import numpy as np
+import random
+import os
 
-from loss import DGCLoss, MAPLoss
+from loss import DGCLoss, MAPLoss, L1Loss
 from utils import CosineSimilarityMatrix, cosine_similarity_matrix, ndcg, meanavep
 from datasets import build as build_dataset
 
@@ -15,8 +18,7 @@ import seaborn as sns
 
 from options import get_args_parser
 
-from models.image_embedding import ImageEmbedding
-from models.string_embedding import StringEmbedding
+from models import ImageEmbedding, StringEmbedding
 from logger import AverageMeter
 
 def train(img_model, str_model, device, train_loader, optim, lossf, epoch):
@@ -44,6 +46,10 @@ def train(img_model, str_model, device, train_loader, optim, lossf, epoch):
 
         loss_img, loss_str, loss_cross = 0,0,0
         for k,loss_func in lossf.items():
+            if k == 'l1_loss':
+                # Regularization
+                loss_cross += 0.005*loss_func(output_str, output_img)
+                continue
             loss_img += loss_func(output_img, labels)
             loss_str += loss_func(output_str, labels)
             loss_cross += loss_func(query=output_str, gallery=output_img, target=labels)
@@ -67,7 +73,7 @@ def train(img_model, str_model, device, train_loader, optim, lossf, epoch):
     print(f'TOTAL-TIME: {round(end_time-start_time)}', end='\n')
 
 
-def test(img_model, str_model, device, test_loader, lossf, criterion, epoch):
+def test(img_model, str_model, device, test_loader, lossf, criterion):
     img_model.eval()
     str_model.eval()
 
@@ -98,41 +104,54 @@ def test(img_model, str_model, device, test_loader, lossf, criterion, epoch):
 
     stats_str = [f'{k}: {v.avg:.4f}' for k,v in stats.items()]
     print(f'\n* TEST set: {stats_str}')
+    return stats
 
 
 def main(args):
     torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+
     device = torch.device('cpu')
     if torch.cuda.is_available():
         device = torch.device(args.device)
+        torch.cuda.manual_seed(args.seed)
 
     train_file, val_file, test_file = build_dataset(args.dataset, args.data_path)
 
     train_loader = DataLoader(
         dataset=train_file,
         batch_size=args.batch_size,
-        shuffle=True
+        shuffle=True,
+        num_workers=args.num_workers,
+        drop_last=True
     )
     val_loader = DataLoader(
         dataset=val_file,
         batch_size=args.batch_size,
-        shuffle=False
+        shuffle=False,
+        num_workers=args.num_workers,
     )
     test_loader = DataLoader(
         dataset=test_file,
         batch_size=args.batch_size,
-        shuffle=False
+        shuffle=False,
+        num_workers=args.num_workers,
     )
 
     img_model = ImageEmbedding(args.out_dim).to(device)
     str_model = StringEmbedding(args.out_dim, train_file.voc_size()).to(device)
+
     optim = torch.optim.Adam([
         {'params': img_model.parameters()},
         {'params': str_model.parameters()}
     ], args.learning_rate)
+    scheduler = ReduceLROnPlateau(optim, 'max', patience=25, cooldown=5, min_lr=1e-6, verbose=True)
+
     similarity = CosineSimilarityMatrix()
 
     lossf = {}
+    lossf['l1_loss'] = L1Loss()
     if args.loss == 'ndcg':
         lossf['ndcg_loss'] = DGCLoss(k=args.tau, penalize=args.penalize, similarity=similarity)
     elif args.loss == 'map':
@@ -148,13 +167,76 @@ def main(args):
         'map' : meanavep,
     }
 
-    for epoch in range(1, args.epochs+1):
-        train(img_model, str_model, device, train_loader, optim, lossf, epoch )
-        test(img_model, str_model, device, val_loader, lossf, criterion, epoch)
-    test(img_model, str_model, device, test_loader, lossf, criterion, epoch)
+    best_stats = {'ndcg': 0, 'map': 0}
+    start_epoch = 1
+    early_stop_counter = 0
+    if args.load is not None:
+        checkpoint = torch.load(args.load, map_location=device)
+        img_model.load_state_dict(checkpoint['img_state_dict'])
+        str_model.load_state_dict(checkpoint['str_state_dict'])
+        optim.load_state_dict(checkpoint['optimizer'])
+        best_stats = checkpoint['best_stats']
+        start_epoch = checkpoint['epoch'] 
+
+        print(f'Model load at epoch {start_epoch}\n\t* NDCG = {best_stats["ndcg"]}\n\t* MAP = {best_stats["map"]}\n')
+
+
+    if not args.test:
+        for epoch in range(1, args.epochs+1):
+            train(img_model, str_model, device, train_loader, optim, lossf, epoch )
+            val_stats = test(img_model, str_model, device, val_loader, lossf, criterion)
+
+            scheduler.step(val_stats['ndcg'].avg + val_stats['map'].avg)
+
+            es_count = 1
+            if val_stats['ndcg'].avg > best_stats['ndcg']:
+                best_stats['ndcg'] = val_stats['ndcg'].avg
+                early_stop_counter, es_count = 0, 0
+                if args.save is not None:
+                    torch.save({
+                        'epoch': epoch, 
+                        'img_state_dict': img_model.state_dict(), 
+                        'str_state_dict': str_model.state_dict(), 
+                        'best_stats': best_stats,
+                        'optimizer': optim.state_dict(),
+                        }, os.path.join(args.save, 'checkpoint_ndcg.pth'))
+
+            if val_stats['map'].avg > best_stats['map']:
+                best_stats['map'] = val_stats['map'].avg
+                early_stop_counter, es_count = 0, 0
+                if args.save is not None:
+                    torch.save({
+                        'epoch': epoch, 
+                        'img_state_dict': img_model.state_dict(), 
+                        'str_state_dict': str_model.state_dict(), 
+                        'best_stats': best_stats,
+                        'optimizer': optim.state_dict(),
+                        }, os.path.join(args.save, 'checkpoint_map.pth'))
+
+            early_stop_counter += es_count
+            if early_stop_counter >= args.early_stop:
+                print('Early Stop at epoch {}'.format(epoch))
+                break
+
+
+    if args.save is not None and not args.test:
+        checkpoint = torch.load(args.save, map_location=device)
+        img_model.load_state_dict(checkpoint['img_state_dict'])
+        str_model.load_state_dict(checkpoint['str_state_dict'])
+
+    test(img_model, str_model, device, test_loader, lossf, criterion)
 
 if __name__ == '__main__':
     import argparse
     args = get_args_parser()
+
+    # Check Test and Load
+    if args.test and args.load is None:
+        raise Exception('Cannot test without loading a model.')
+
+    if args.save is not None and not args.test:
+        if not os.path.isdir(args.save):
+            os.makedirs(args.save)
+
     main(args)
 
