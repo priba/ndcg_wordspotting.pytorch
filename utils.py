@@ -63,9 +63,10 @@ def meanavep(queries, labels, gallery=None, gallery_labels=None, reducefn='mean'
         ranking = cosine_similarity_matrix(queries, queries)
         mask_diagonal = ~ torch.eye(ranking.shape[0]).bool()
         ranking = ranking[mask_diagonal].view(ranking.shape[0], ranking.shape[0]-1)
+        gallery_labels = labels
 
     # Ground-truth comparison
-    gt = torch.zeros((ranking.shape[0], ranking.shape[1]), device=queries.device)
+    gt = torch.zeros((labels.shape[0], gallery_labels.shape[0]), device=queries.device)
     for i, str1 in enumerate(labels):
         for j, str2 in enumerate(gallery_labels):
             gt[i,j] = str1 == str2
@@ -96,9 +97,10 @@ def ndcg(queries, labels, gallery=None, gallery_labels=None, reducefn='mean', pe
         ranking = cosine_similarity_matrix(queries, queries)
         mask_diagonal = ~ torch.eye(ranking.shape[0]).bool()
         ranking = ranking[mask_diagonal].view(ranking.shape[0], ranking.shape[0]-1)
+        gallery_labels = labels
 
     # Ground-truth Ranking function
-    gt = torch.zeros((ranking.shape[0], ranking.shape[1]), device=queries.device)
+    gt = torch.zeros((labels.shape[0], gallery_labels.shape[0]), device=queries.device)
     for i, str1 in enumerate(labels):
         for j, str2 in enumerate(gallery_labels):
             gt[i,j] = Levenshtein.distance(str1, str2)

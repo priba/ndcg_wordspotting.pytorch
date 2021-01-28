@@ -3,14 +3,18 @@ from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 from PIL import Image
 import os
+from xml.dom import minidom
 import random
 
 class GeorgeWashington(Dataset):
-    def __init__(self, root, word_id, char_to_idx, image_extension='.png', transform=transforms.ToTensor(), max_length=10):
+    def __init__(self, root, char_to_idx, transform=transforms.ToTensor(), max_length=10):
         self._dataset = 'George Washington'
         self.root = root
-        self.word_list = word_id
-        self.image_extension = image_extension
+
+        with open(os.path.join(root, 'transcriptions.txt')) as f:
+            transcriptions = f.read().splitlines()
+        self.word_list = [i.split() for i in transcriptions]
+
         self.transform = transform
         self.char_to_idx = char_to_idx
         self.max_length=max_length
@@ -18,7 +22,7 @@ class GeorgeWashington(Dataset):
     def __getitem__(self, index):
         word_id, label = self.word_list[index]
 
-        img = Image.open(os.path.join(self.root, f'{word_id}{self.image_extension}'))
+        img = Image.open(os.path.join(self.root, word_id))
         if self.transform is not None:
             img = self.transform(img)
 
@@ -32,58 +36,53 @@ class GeorgeWashington(Dataset):
     def voc_size(self):
         return len(self.char_to_idx)
 
-def prepare_dataset(root, word_path, image_extension):
+def prepare_dataset(root, word_path, image_extension, partition):
     # Create word folder
     os.mkdir(word_path)
 
-    # Read file order
-    with open(os.path.join(root, 'file_order.txt')) as f:
-        file_order = f.read().splitlines()
+    previous_image_name = ''
+    for subset in ['train', 'test']:
+        os.mkdir(os.path.join(word_path,subset))
 
-    with open(os.path.join(root, 'annotations.txt'), encoding='ISO-8859-15') as f:
-        annotations = f.read().splitlines()
+        with open(os.path.join(word_path, subset, 'transcriptions.txt'), 'w') as f_trans:
 
-    idx_annotations = 0
-    with open(os.path.join(root, 'transcriptions.txt'), 'w') as f_trans:
-        for img_file in file_order:
-            # Get image id
-            img_id = os.path.splitext(img_file)[0]
-
-            # Get GT bounding boxes
-            with open(os.path.join(root, f'{img_id}_boxes.txt')) as f:
-                img_boxes = f.read().splitlines()
-            img_boxes.pop(0)
-
-            # Read image
-            img = Image.open(os.path.join(root, img_file))
-            w, h = img.size
-
-            # Iterate through bounding  boxes
-            for id_word, bb_line in enumerate(img_boxes):
-                bb_line = list(map(float, bb_line.split()))
-                x1 = bb_line[0]*w
-                x2 = bb_line[1]*w
-                y1 = bb_line[2]*h
-                y2 = bb_line[3]*h
+            xmldoc = minidom.parse(f'./datasets/georgewashington/gw_{partition}_{subset}.xml')
+            spotlist = xmldoc.getElementsByTagName('spot')
+    
+            for word_id, spot in enumerate(spotlist):
+                # Get image id
+                img_id = spot.attributes['image'].value.replace('.png', '')
+                image_name = img_id + '.tif'
+    
+                # Read image
+                if image_name != previous_image_name:
+                    image_name_previous = image_name
+                    img = Image.open(os.path.join(root, image_name))
+    
+                x1 = int(spot.attributes['x'].value)
+                y1 = int(spot.attributes['y'].value)
+                x2 = x1 + int(spot.attributes['w'].value)
+                y2 = y1 + int(spot.attributes['h'].value)
                 img_word = img.crop(box=(x1,y1,x2,y2))
-                img_word.save(os.path.join(word_path, f'{img_id}_{id_word}{image_extension}'))
-                f_trans.write(f'{img_id}_{id_word} {annotations[idx_annotations]}\n')
-                idx_annotations += 1
+    
+                img_word_name = f'{img_id}_{word_id:04d}{image_extension}'
+                img_word.save(os.path.join(word_path, subset, img_word_name))
+                f_trans.write(f'{img_word_name} {spot.attributes["word"].value}\n')
 
-def build_dataset(root, image_extension='.png', transform=transforms.ToTensor):
-    word_path = os.path.join(root, 'words')
+
+def build_dataset(root, image_extension='.png', transform=transforms.ToTensor, partition='cv1'):
+    word_path = os.path.join(root, partition)
     if not os.path.isdir(word_path):
-        prepare_dataset(root, word_path, image_extension)
-    with open(os.path.join(root, 'transcriptions.txt')) as f:
-        transcriptions = f.read().splitlines()
+        prepare_dataset(root, word_path, image_extension, partition)
 
-    random.shuffle(transcriptions)
-    transcriptions = [i.split() for i in transcriptions]
-    total_words = len(transcriptions)
+    with open(os.path.join(word_path, 'train', 'transcriptions.txt')) as f:
+        train_transcriptions = f.read().splitlines()
+
+    train_transcriptions = [i.split() for i in train_transcriptions]
 
     dic = ''
     max_length = 0
-    for i in transcriptions:
+    for i in train_transcriptions:
         max_length = len(i[1]) if max_length < len(i[1]) else max_length
         dic += i[1]
 
@@ -91,21 +90,18 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor):
     dic.sort()
     dic = {k: v for v, k in enumerate(dic)}
 
-    word_id_train = transcriptions[:round(total_words*0.65)]
-    mean = []
-    std = []
+    mean, std = [], []
     transform = transforms.Compose([
         transforms.Resize((100, 500)),
         transforms.ToTensor(),
     ])
-    for i in word_id_train:
-        img = Image.open(os.path.join(word_path, f'{i[0]}{image_extension}'))
+    for i in train_transcriptions:
+        img = Image.open(os.path.join(word_path, 'train', f'{i[0]}'))
         img = transform(img)
         mean.append(img.mean())
         std.append(img.std())
     mean = torch.stack(mean).mean()
     std = torch.stack(std).mean()
-
 
     transform = transforms.Compose([
         transforms.Resize((100, 500)),
@@ -114,25 +110,16 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor):
     ])
     # Prepare Data
     train_file = GeorgeWashington(
-        root=word_path,
-        word_id=word_id_train,
+        root=os.path.join(word_path, 'train'),
         transform=transform,
         char_to_idx=dic,
-        max_length = max_length,
-    )
-    validation_file = GeorgeWashington(
-        root=word_path,
-        word_id=transcriptions[round(total_words*0.65):round(total_words*0.75)],
-        transform=transform,
-        char_to_idx=dic,
-        max_length = max_length,
+        max_length=max_length,
     )
     test_file = GeorgeWashington(
-        root=word_path,
-        word_id=transcriptions[-round(total_words*0.25):],
+        root=os.path.join(word_path, 'test'),
         transform=transform,
         char_to_idx=dic,
-        max_length = max_length,
+        max_length=max_length,
     )
-    return train_file, validation_file, test_file
+    return train_file, test_file, test_file
 

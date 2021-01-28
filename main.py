@@ -51,7 +51,8 @@ def train(img_model, str_model, device, train_loader, optim, lossf, epoch):
                 loss_cross += 0.005*loss_func(output_str, output_img)
                 continue
             loss_img += loss_func(output_img, labels)
-            loss_str += loss_func(output_str, labels)
+            if k != 'map_loss':
+                loss_str += loss_func(output_str, labels)
             loss_cross += loss_func(query=output_str, gallery=output_img, target=labels)
         loss = loss_img + loss_str + loss_cross
         loss.backward()
@@ -80,6 +81,9 @@ def test(img_model, str_model, device, test_loader, lossf, criterion):
     stats = {}
     for k, v in criterion.items():
         stats[k] = AverageMeter()
+        stats[f'img_{k}'] = AverageMeter()
+        if k != 'map':
+            stats[f'str_{k}'] = AverageMeter()
 
     with torch.no_grad():
         queries, gallery, img_labels = [], [], []
@@ -101,6 +105,10 @@ def test(img_model, str_model, device, test_loader, lossf, criterion):
 
         for k, criterion_func in criterion.items():
             stats[k].update(criterion_func(queries, query_labels, gallery=gallery, gallery_labels=gallery_labels))
+            stats[f'img_{k}'].update(criterion_func(gallery, gallery_labels))
+            if k != 'map':
+                stats[f'str_{k}'].update(criterion_func(queries, query_labels))
+
 
     stats_str = [f'{k}: {v.avg:.4f}' for k,v in stats.items()]
     print(f'\n* TEST set: {stats_str}')
@@ -117,7 +125,7 @@ def main(args):
         device = torch.device(args.device)
         torch.cuda.manual_seed(args.seed)
 
-    train_file, val_file, test_file = build_dataset(args.dataset, args.data_path)
+    train_file, val_file, test_file = build_dataset(args.dataset, args.data_path, args.partition)
 
     train_loader = DataLoader(
         dataset=train_file,
@@ -220,7 +228,7 @@ def main(args):
 
 
     if args.save is not None and not args.test:
-        checkpoint = torch.load(args.save, map_location=device)
+        checkpoint = torch.load(os.path.join(args.save, 'checkpoint_map.pth'), map_location=device)
         img_model.load_state_dict(checkpoint['img_state_dict'])
         str_model.load_state_dict(checkpoint['str_state_dict'])
 
