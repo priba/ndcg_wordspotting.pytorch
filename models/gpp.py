@@ -39,15 +39,29 @@ class GPP(nn.Module):
             return self._generic_pyramid_pooling(input_x, self.levels)
 
     def _pyramid_pooling(self, input_x, output_sizes):
-        pyramid_level_tensors = []
-        for tsize in output_sizes:
-            if self.pool_type == 'max_pool':
-                pyramid_level_tensor = F.adaptive_max_pool2d(input_x, tsize)
-            if self.pool_type == 'avg_pool':
-                pyramid_level_tensor = F.adaptive_avg_pool2d(input_x, tsize)
-            pyramid_level_tensor = pyramid_level_tensor.view(input_x.size(0), -1)
-            pyramid_level_tensors.append(pyramid_level_tensor)
-        return torch.cat(pyramid_level_tensors, dim=1)
+        x_batch, mask = input_x.decompose()
+        y = []
+        for x, m in zip(x_batch, mask):
+            m = ~m
+
+            w = torch.where(m.any(0))[0]
+            w = m.shape[1] if w.nelement() == 0 else w.max()+1
+
+            h = torch.where(m.any(1))[0]
+            h = m.shape[0] if h.nelement() == 0 else h.max()+1
+
+            x = x[:,:h,:w]
+
+            pyramid_level_tensors = []
+            for tsize in output_sizes:
+                if self.pool_type == 'max_pool':
+                    pyramid_level_tensor = F.adaptive_max_pool2d(x, tsize)
+                if self.pool_type == 'avg_pool':
+                    pyramid_level_tensor = F.adaptive_avg_pool2d(x, tsize)
+                pyramid_level_tensor = pyramid_level_tensor.view(1, -1)
+                pyramid_level_tensors.append(pyramid_level_tensor)
+            y.append(torch.cat(pyramid_level_tensors, dim=1))
+        return torch.cat(y, dim=0)
 
     def _spatial_pyramid_pooling(self, input_x, levels):
 

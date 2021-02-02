@@ -9,6 +9,7 @@ dependencies:
     - pandas
     - seaborn
     - scikit-learn
+    - tensorboard
     - pip
     - pip:
         - python-Levenshtein 

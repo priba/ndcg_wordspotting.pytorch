@@ -92,7 +92,6 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor, p
 
     mean, std = [], []
     transform = transforms.Compose([
-        transforms.Resize((100, 500)),
         transforms.ToTensor(),
     ])
     for i in train_transcriptions:
@@ -104,7 +103,7 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor, p
     std = torch.stack(std).mean()
 
     transform = transforms.Compose([
-        transforms.Resize((100, 500)),
+        transforms.RandomAffine(degrees=5, scale=(0.9,1.1), shear=5),
         transforms.ToTensor(),
         transforms.Normalize((mean.item()), (std.item())),
     ])
@@ -115,6 +114,11 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor, p
         char_to_idx=dic,
         max_length=max_length,
     )
+
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((mean.item()), (std.item())),
+    ])
     test_file = GeorgeWashington(
         root=os.path.join(word_path, 'test'),
         transform=transform,

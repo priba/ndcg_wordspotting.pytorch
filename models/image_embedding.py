@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .gpp import GPP
+from utils import NestedTensor
 
 class ImageEmbedding(nn.Module):
     def __init__(self, n_out, in_channels=1, gpp_type='tpp', pooling_levels=3, pool_type='max_pool'):
@@ -66,8 +67,12 @@ class ImageEmbedding(nn.Module):
         )
 
     def forward(self, x):
-        y = self.conv(x)
-        y = self.spp(y)
+        input_tensor, mask = x.decompose()
+        y = self.conv(x.tensors)
+        assert mask is not None
+        mask = F.interpolate(mask[None].float(), size=y.shape[-2:]).to(torch.bool)[0]
+
+        y = self.spp(NestedTensor(y, mask))
         y = self.mlp(y)
         return F.normalize(y, dim=-1)
 

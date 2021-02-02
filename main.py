@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import time
 import matplotlib.pyplot as plt
@@ -10,7 +11,7 @@ import random
 import os
 
 from loss import DGCLoss, MAPLoss, L1Loss
-from utils import CosineSimilarityMatrix, cosine_similarity_matrix, ndcg, meanavep
+from utils import CosineSimilarityMatrix, cosine_similarity_matrix, ndcg, meanavep, collate_fn
 from datasets import build as build_dataset
 
 import pandas as pd
@@ -39,7 +40,7 @@ def train(img_model, str_model, device, train_loader, optim, lossf, epoch):
         data, targets = data.to(device), targets.to(device)
 
         # Batch size
-        bz = data.shape[0]
+        bz = len(labels)
 
         output_img = img_model(data)
         output_str = str_model(targets)
@@ -72,6 +73,8 @@ def train(img_model, str_model, device, train_loader, optim, lossf, epoch):
     )
     end_time = time.time()
     print(f'TOTAL-TIME: {round(end_time-start_time)}', end='\n')
+
+    return stats
 
 
 def test(img_model, str_model, device, test_loader, lossf, criterion):
@@ -132,19 +135,22 @@ def main(args):
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.num_workers,
-        drop_last=True
+        drop_last=True,
+        collate_fn=collate_fn
     )
     val_loader = DataLoader(
         dataset=val_file,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
+        collate_fn=collate_fn
     )
     test_loader = DataLoader(
         dataset=test_file,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
+        collate_fn=collate_fn
     )
 
     img_model = ImageEmbedding(args.out_dim).to(device)
@@ -175,6 +181,16 @@ def main(args):
         'map' : meanavep,
     }
 
+    if args.save is not None:
+        writer = SummaryWriter(log_dir=args.save)
+        # Test transforms
+        for i in range(5):
+            image, _, _ = train_file[0]
+            writer.add_image('Train/Images', image, i)
+
+            image, _, _ = test_file[0]
+            writer.add_image('Test/Images', image, i)
+
     best_stats = {'ndcg': 0, 'map': 0}
     start_epoch = 1
     early_stop_counter = 0
@@ -191,10 +207,26 @@ def main(args):
 
     if not args.test:
         for epoch in range(1, args.epochs+1):
-            train(img_model, str_model, device, train_loader, optim, lossf, epoch )
+            train_stats = train(img_model, str_model, device, train_loader, optim, lossf, epoch )
             val_stats = test(img_model, str_model, device, val_loader, lossf, criterion)
 
             scheduler.step(val_stats['ndcg'].avg + val_stats['map'].avg)
+
+            if args.save is not None:
+                # Train
+                writer.add_scalar('Loss/Global', train_stats['train_loss'].avg, epoch)
+                writer.add_scalar('Loss/Image', train_stats['train_loss'].avg, epoch)
+                writer.add_scalar('Loss/String', train_stats['train_loss'].avg, epoch)
+                writer.add_scalar('Loss/Cross', train_stats['train_loss'].avg, epoch)
+
+                # Test
+                writer.add_scalar('TestQbS/NDCG', val_stats['ndcg'].avg, epoch)
+                writer.add_scalar('TestQbS/MAP', val_stats['map'].avg, epoch)
+                writer.add_scalar('TestQbE/NDCG', val_stats['img_ndcg'].avg, epoch)
+                writer.add_scalar('TestSED', val_stats['str_ndcg'].avg, epoch)
+
+                # Learning rate
+                writer.add_scalar('Learning Rate', optim.param_groups[0]['lr'], epoch)
 
             es_count = 1
             if val_stats['ndcg'].avg > best_stats['ndcg']:

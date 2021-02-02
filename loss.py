@@ -53,7 +53,9 @@ def dgc_loss(query: Tensor, target: Tensor, gallery: Tensor = None, k: float = 1
     indicator = indicator.sum(-1) + 1
 
     # Relevance score
-    relevance = 10. / (gt + 1)
+#    relevance = 10. / (gt + 1)
+    relevance = 4 - gt
+    relevance = relevance.clamp(0) 
 
     if penalize:
         relevance = relevance.exp2() - 1
@@ -66,6 +68,9 @@ def dgc_loss(query: Tensor, target: Tensor, gallery: Tensor = None, k: float = 1
     relevance, _ = relevance.sort(descending=True)
     indicator = torch.arange(relevance.shape[-1], dtype=torch.float32, device=relevance.device)
     idcg = torch.sum(relevance / torch.log2(indicator + 2), dim=-1)
+
+    dcg = dcg[idcg!=0]
+    idcg = idcg[idcg!=0]
 
     ndcg = dcg / idcg
     return 1 - ndcg.mean()
