@@ -5,36 +5,21 @@ import torch.nn as nn
 from torch import Tensor
 from utils import sigmoid, CosineSimilarityMatrix
 from collections.abc import Callable
-import Levenshtein
 
 class DGCLoss(nn.Module):
-    def __init__(self, k: float = 1e-3, penalize=False, normalize=True, similarity: Callable = CosineSimilarityMatrix(), indicator_function: Callable = sigmoid):
+    def __init__(self, k: float = 1e-3, penalize=False, normalize=True, indicator_function: Callable = sigmoid):
         super(DGCLoss, self).__init__()
         self.k = k
         self.penalize = penalize
         self.normalize = normalize
-        self.similarity = CosineSimilarityMatrix()
         self.indicator_function = indicator_function
 
-    def forward(self, query: Tensor, target: Tensor, gallery: Tensor = None) -> Tensor:
-        return dgc_loss(query, target, gallery=gallery, k=self.k, penalize=self.penalize, normalize=self.normalize, similarity=self.similarity, indicator_function=self.indicator_function)
+    def forward(self, ranking: Tensor, gt: Tensor, mask_diagonal: Tensor = None) -> Tensor:
+        return dgc_loss(ranking, gt, mask_diagonal=mask_diagonal, k=self.k, penalize=self.penalize, normalize=self.normalize, indicator_function=self.indicator_function)
 
-def dgc_loss(query: Tensor, target: Tensor, gallery: Tensor = None, k: float = 1e-3, penalize: bool = False, normalize: bool = True, similarity: Callable = CosineSimilarityMatrix(), indicator_function: Callable = sigmoid) -> Tensor:
+def dgc_loss(ranking: Tensor, gt: Tensor, mask_diagonal: Tensor = None, k: float = 1e-3, penalize: bool = False, normalize: bool = True, indicator_function: Callable = sigmoid) -> Tensor:
 
-    # Similarity matrix
-    if gallery is not None:
-        ranking = similarity(query, gallery)
-    else:
-        ranking = similarity(query, query)
-        mask_diagonal = ~ torch.eye(ranking.shape[0]).bool()
-
-    # Ground-truth Ranking function
-    gt = torch.zeros((ranking.shape[0], ranking.shape[1]), device=query.device)
-    for i, str1 in enumerate(target):
-        for j, str2 in enumerate(target[i+1:], start=i+1):
-            gt[i,j] = gt[j, i] = Levenshtein.distance(str1, str2)
-
-    if gallery is None:
+    if mask_diagonal is not None:
         ranking = ranking[mask_diagonal].view(ranking.shape[0], ranking.shape[0]-1)
         gt = gt[mask_diagonal].view(gt.shape[0], gt.shape[0]-1)
 
@@ -55,7 +40,7 @@ def dgc_loss(query: Tensor, target: Tensor, gallery: Tensor = None, k: float = 1
     # Relevance score
 #    relevance = 10. / (gt + 1)
     relevance = 4 - gt
-    relevance = relevance.clamp(0) 
+    relevance = relevance.clamp(0)
 
     if penalize:
         relevance = relevance.exp2() - 1
@@ -73,35 +58,28 @@ def dgc_loss(query: Tensor, target: Tensor, gallery: Tensor = None, k: float = 1
     idcg = idcg[idcg!=0]
 
     ndcg = dcg / idcg
+
+    if ndcg.numel() == 0:
+        return torch.tensor(1)
+
     return 1 - ndcg.mean()
 
 class MAPLoss(nn.Module):
-    def __init__(self, k: float = 1e-3, similarity: Callable = CosineSimilarityMatrix(), indicator_function: Callable = sigmoid):
+    def __init__(self, k: float = 1e-3, indicator_function: Callable = sigmoid):
         super(MAPLoss, self).__init__()
         self.k = k
-        self.similarity = similarity
         self.indicator_function = indicator_function
 
-    def forward(self, query: Tensor, target: Tensor, gallery: Tensor = None) -> Tensor:
-        return map_loss(query, target, gallery=gallery, k=self.k, similarity=self.similarity, indicator_function=self.indicator_function)
+    def forward(self, ranking: Tensor, gt: Tensor, mask_diagonal: Tensor = None) -> Tensor:
+        return map_loss(ranking, gt, mask_diagonal=mask_diagonal, k=self.k, indicator_function=self.indicator_function)
 
 
-def map_loss(query: Tensor, target: Tensor, gallery: Tensor = None, k: float = 1e-3, similarity: Callable = CosineSimilarityMatrix(), indicator_function: Callable = sigmoid) -> Tensor:
-
-    # Similarity matrix
-    if gallery is not None:
-        ranking = similarity(query, gallery)
-    else:
-        ranking = similarity(query, query)
-        mask_diagonal = ~ torch.eye(ranking.shape[0]).bool()
+def map_loss(ranking: Tensor, gt: Tensor, mask_diagonal: Tensor = None, k: float = 1e-3, indicator_function: Callable = sigmoid) -> Tensor:
 
     # Ground-truth comparison
-    gt = torch.zeros((ranking.shape[0], ranking.shape[1]), device=query.device)
-    for i, str1 in enumerate(target):
-        for j, str2 in enumerate(target[i+1:], start=i+1):
-            gt[i,j] = gt[j, i] = str1 == str2
+    gt = gt==0
 
-    if gallery is None:
+    if mask_diagonal is not None:
         ranking = ranking[mask_diagonal].view(ranking.shape[0], ranking.shape[0]-1)
         gt = gt[mask_diagonal].view(gt.shape[0], gt.shape[0]-1)
 
@@ -130,7 +108,7 @@ def map_loss(query: Tensor, target: Tensor, gallery: Tensor = None, k: float = 1
     num_positives = num_positives[num_positives>0]
     ap = ap/num_positives
     if torch.numel(ap) == 0:
-        return 1
+        return torch.tensor(1)
     return 1-ap.mean()
 
 class L1Loss(nn.Module):

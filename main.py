@@ -21,8 +21,9 @@ from options import get_args_parser
 
 from models import ImageEmbedding, StringEmbedding
 from logger import AverageMeter
+import Levenshtein
 
-def train(img_model, str_model, device, train_loader, optim, lossf, epoch):
+def train(img_model, str_model, device, train_loader, optim, lossf, similarity, epoch):
     img_model.train()
     str_model.train()
 
@@ -45,17 +46,32 @@ def train(img_model, str_model, device, train_loader, optim, lossf, epoch):
         output_img = img_model(data)
         output_str = str_model(targets)
 
+        # Similarity matrices
+        ranking_img = similarity(output_img, output_img)
+        ranking_str = similarity(output_str, output_str)
+        ranking_cross = similarity(output_str, output_img)
+
+        mask_diagonal = ~ torch.eye(ranking_img.shape[0]).bool()
+
+        # Ground-truth Ranking function
+        gt = torch.zeros((ranking_img.shape[0], ranking_img.shape[1]), device=ranking_img.device)
+        for i, str1 in enumerate(labels):
+            for j, str2 in enumerate(labels[i+1:], start=i+1):
+                gt[i,j] = gt[j, i] = Levenshtein.distance(str1, str2)
+
         loss_img, loss_str, loss_cross = 0,0,0
         for k,loss_func in lossf.items():
             if k == 'l1_loss':
                 # Regularization
                 loss_cross += 0.005*loss_func(output_str, output_img)
                 continue
-            loss_img += loss_func(output_img, labels)
+            loss_img += loss_func(ranking_img, gt, mask_diagonal=mask_diagonal)
             if k != 'map_loss':
-                loss_str += loss_func(output_str, labels)
-            loss_cross += loss_func(query=output_str, gallery=output_img, target=labels)
+                loss_str += loss_func(ranking_str, gt, mask_diagonal=mask_diagonal)
+            loss_cross += loss_func(ranking_cross, gt)
+
         loss = loss_img + loss_str + loss_cross
+
         loss.backward()
         optim.step()
 
@@ -64,12 +80,20 @@ def train(img_model, str_model, device, train_loader, optim, lossf, epoch):
         stats['str_loss'].update(loss_str.item(), bz)
         stats['cross_loss'].update(loss_cross.item(), bz)
 
+        if step % 1500 == 0:
+            log_stats = [f'{k}: {v.avg:.4f}' for k,v in stats.items()]
+            print(
+                        f'EPOCH: {epoch}',
+                        f'STEP: {step+1:0>{len(str(len(train_loader)))}}/{len(train_loader)}',
+                        f'LOSS: {log_stats}',
+            )
 
-    loss_str = [f'{k}: {v.avg:.4f}' for k,v in stats.items()]
+
+    log_stats = [f'{k}: {v.avg:.4f}' for k,v in stats.items()]
     print(
                 f'EPOCH: {epoch}',
                 f'STEP: {step+1:0>{len(str(len(train_loader)))}}/{len(train_loader)}',
-                f'LOSS: {loss_str}',
+                f'LOSS: {loss_stats}',
     )
     end_time = time.time()
     print(f'TOTAL-TIME: {round(end_time-start_time)}', end='\n')
@@ -169,12 +193,12 @@ def main(args):
     lossf = {}
     lossf['l1_loss'] = L1Loss()
     if args.loss == 'ndcg':
-        lossf['ndcg_loss'] = DGCLoss(k=args.tau, penalize=args.penalize, similarity=similarity)
+        lossf['ndcg_loss'] = DGCLoss(k=args.tau, penalize=args.penalize)
     elif args.loss == 'map':
-        lossf['map_loss'] = MAPLoss(k=args.tau, similarity=similarity)
+        lossf['map_loss'] = MAPLoss(k=args.tau)
     elif args.loss == 'combine':
-        lossf['ndcg_loss'] = DGCLoss(k=args.tau, penalize=args.penalize, similarity=similarity)
-        lossf['map_loss'] = MAPLoss(k=args.tau, similarity=similarity)
+        lossf['ndcg_loss'] = DGCLoss(k=args.tau, penalize=args.penalize)
+        lossf['map_loss'] = MAPLoss(k=args.tau)
     else:
         raise ValueError(f'loss {args.loss} not supported')
 
@@ -209,7 +233,7 @@ def main(args):
 
     if not args.test:
         for epoch in range(1, args.epochs+1):
-            train_stats = train(img_model, str_model, device, train_loader, optim, lossf, epoch )
+            train_stats = train(img_model, str_model, device, train_loader, optim, lossf, similarity, epoch)
             val_stats = test(img_model, str_model, device, val_loader, lossf, criterion)
 
             scheduler.step(val_stats['ndcg'].avg + val_stats['map'].avg)
