@@ -5,6 +5,7 @@ from PIL import Image
 import os
 from xml.dom import minidom
 import random
+import numpy as np
 
 class GeorgeWashington(Dataset):
     def __init__(self, root, char_to_idx, transform=transforms.ToTensor(), max_length=10):
@@ -13,14 +14,20 @@ class GeorgeWashington(Dataset):
 
         with open(os.path.join(root, 'transcriptions.txt')) as f:
             transcriptions = f.read().splitlines()
-        self.word_list = [i.split() for i in transcriptions]
+        word_list = [i.split() for i in transcriptions]
 
+        self.words, self.labels = [], []
+        for w, l in word_list:
+            self.words.append(w)
+            self.labels.append(l)
+
+        self.unique_labels = list(set(self.labels))
         self.transform = transform
         self.char_to_idx = char_to_idx
         self.max_length=max_length
 
     def __getitem__(self, index):
-        word_id, label = self.word_list[index]
+        word_id, label = self.words[index], self.labels[index]
 
         img = Image.open(os.path.join(self.root, word_id))
         if self.transform is not None:
@@ -31,10 +38,18 @@ class GeorgeWashington(Dataset):
         return img, word, label
 
     def __len__(self):
-        return len(self.word_list)
+        return len(self.words)
 
     def voc_size(self):
         return len(self.char_to_idx)
+
+    def balance_weigths(self):
+        labels = np.array(self.labels)
+        weights = torch.zeros(len(self.words))
+        for l in self.unique_labels:
+            count = np.count_nonzero(labels == l)
+            weights[labels==l] = count
+        return 1./weights
 
 def prepare_dataset(root, word_path, image_extension, partition):
     # Create word folder
@@ -48,23 +63,23 @@ def prepare_dataset(root, word_path, image_extension, partition):
 
             xmldoc = minidom.parse(f'./datasets/georgewashington/gw_{partition}_{subset}.xml')
             spotlist = xmldoc.getElementsByTagName('spot')
-    
+
             for word_id, spot in enumerate(spotlist):
                 # Get image id
                 img_id = spot.attributes['image'].value.replace('.png', '')
                 image_name = img_id + '.tif'
-    
+
                 # Read image
                 if image_name != previous_image_name:
                     image_name_previous = image_name
                     img = Image.open(os.path.join(root, image_name))
-    
+
                 x1 = int(spot.attributes['x'].value)
                 y1 = int(spot.attributes['y'].value)
                 x2 = x1 + int(spot.attributes['w'].value)
                 y2 = y1 + int(spot.attributes['h'].value)
                 img_word = img.crop(box=(x1,y1,x2,y2))
-    
+
                 img_word_name = f'{img_id}_{word_id:04d}{image_extension}'
                 img_word.save(os.path.join(word_path, subset, img_word_name))
                 f_trans.write(f'{img_word_name} {spot.attributes["word"].value}\n')
