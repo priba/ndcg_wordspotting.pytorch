@@ -130,11 +130,12 @@ def main(args):
 
     train_file, val_file, test_file = build_dataset(args.dataset, args.data_path, args.partition)
 
-    train_sampler = WeightedRandomSampler(weights= num_samples=, replacement = True)
+
+    train_sampler = WeightedRandomSampler(weights=train_file.balance_weigths(), num_samples=500000, replacement = True)
     train_loader = DataLoader(
         dataset=train_file,
         batch_size=args.batch_size,
-        shuffle=True,
+        sampler=train_sampler,
         num_workers=args.num_workers,
         drop_last=True,
         collate_fn=collate_fn
@@ -201,7 +202,7 @@ def main(args):
         str_model.load_state_dict(checkpoint['str_state_dict'])
         optim.load_state_dict(checkpoint['optimizer'])
         best_stats = checkpoint['best_stats']
-        start_epoch = checkpoint['epoch'] 
+        start_epoch = checkpoint['epoch']
 
         print(f'Model load at epoch {start_epoch}\n\t* NDCG = {best_stats["ndcg"]}\n\t* MAP = {best_stats["map"]}\n')
 
@@ -235,9 +236,9 @@ def main(args):
                 early_stop_counter, es_count = 0, 0
                 if args.save is not None:
                     torch.save({
-                        'epoch': epoch, 
-                        'img_state_dict': img_model.state_dict(), 
-                        'str_state_dict': str_model.state_dict(), 
+                        'epoch': epoch,
+                        'img_state_dict': img_model.state_dict(),
+                        'str_state_dict': str_model.state_dict(),
                         'best_stats': best_stats,
                         'optimizer': optim.state_dict(),
                         }, os.path.join(args.save, 'checkpoint_ndcg.pth'))
@@ -247,9 +248,9 @@ def main(args):
                 early_stop_counter, es_count = 0, 0
                 if args.save is not None:
                     torch.save({
-                        'epoch': epoch, 
-                        'img_state_dict': img_model.state_dict(), 
-                        'str_state_dict': str_model.state_dict(), 
+                        'epoch': epoch,
+                        'img_state_dict': img_model.state_dict(),
+                        'str_state_dict': str_model.state_dict(),
                         'best_stats': best_stats,
                         'optimizer': optim.state_dict(),
                         }, os.path.join(args.save, 'checkpoint_map.pth'))
