@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
@@ -130,6 +130,7 @@ def main(args):
 
     train_file, val_file, test_file = build_dataset(args.dataset, args.data_path, args.partition)
 
+    train_sampler = WeightedRandomSampler(weights= num_samples=, replacement = True)
     train_loader = DataLoader(
         dataset=train_file,
         batch_size=args.batch_size,

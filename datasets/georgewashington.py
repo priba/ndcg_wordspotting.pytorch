@@ -13,14 +13,22 @@ class GeorgeWashington(Dataset):
 
         with open(os.path.join(root, 'transcriptions.txt')) as f:
             transcriptions = f.read().splitlines()
-        self.word_list = [i.split() for i in transcriptions]
+        word_list = [i.split() for i in transcriptions]
 
+        import pdb; pdb.set_trace()
+        self.words, self.labels = [], []
+        for w, l in word_list:
+            self.words.append(w)
+            self.labels.append(l)
+
+        self.unique_labels = set(self.labels)
+        import pdb; pdb.set_trace()
         self.transform = transform
         self.char_to_idx = char_to_idx
         self.max_length=max_length
 
     def __getitem__(self, index):
-        word_id, label = self.word_list[index]
+        word_id, label = self.words[index], self.labels[index]
 
         img = Image.open(os.path.join(self.root, word_id))
         if self.transform is not None:
@@ -31,10 +39,13 @@ class GeorgeWashington(Dataset):
         return img, word, label
 
     def __len__(self):
-        return len(self.word_list)
+        return len(self.words)
 
     def voc_size(self):
         return len(self.char_to_idx)
+
+    def balance_weigths(self):
+
 
 def prepare_dataset(root, word_path, image_extension, partition):
     # Create word folder
