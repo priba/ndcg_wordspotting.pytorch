@@ -93,7 +93,7 @@ def train(img_model, str_model, device, train_loader, optim, lossf, similarity, 
     print(
                 f'EPOCH: {epoch}',
                 f'STEP: {step+1:0>{len(str(len(train_loader)))}}/{len(train_loader)}',
-                f'LOSS: {loss_stats}',
+                f'LOSS: {log_stats}',
     )
     end_time = time.time()
     print(f'TOTAL-TIME: {round(end_time-start_time)}', end='\n')
