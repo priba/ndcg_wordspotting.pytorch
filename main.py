@@ -23,7 +23,7 @@ from models import ImageEmbedding, StringEmbedding
 from logger import AverageMeter
 import Levenshtein
 
-def train(img_model, str_model, device, train_loader, optim, lossf, similarity, epoch):
+def train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch):
     img_model.train()
     str_model.train()
 
@@ -63,12 +63,12 @@ def train(img_model, str_model, device, train_loader, optim, lossf, similarity, 
         for k,loss_func in lossf.items():
             if k == 'l1_loss':
                 # Regularization
-                loss_cross += 0.005*loss_func(output_str, output_img)
+                loss_cross += loss_weights[k]*loss_func(output_str, output_img)
                 continue
-            loss_img += loss_func(ranking_img, gt, mask_diagonal=mask_diagonal)
+            loss_img += loss_weights[k]*loss_func(ranking_img, gt, mask_diagonal=mask_diagonal)
             if k != 'map_loss':
-                loss_str += loss_func(ranking_str, gt, mask_diagonal=mask_diagonal)
-            loss_cross += loss_func(ranking_cross, gt)
+                loss_str += loss_weights[k]*loss_func(ranking_str, gt, mask_diagonal=mask_diagonal)
+            loss_cross += loss_weights[k]*loss_func(ranking_cross, gt)
 
         loss = loss_img + loss_str + loss_cross
 
@@ -139,7 +139,7 @@ def test(img_model, str_model, device, test_loader, lossf, criterion):
 
     stats_str = [f'{k}: {v.avg:.4f}' for k,v in stats.items()]
     print(f'\n* TEST set: {stats_str}')
-    return stats
+    return stats, (queries, query_labels), (gallery, gallery_labels)
 
 
 def main(args):
@@ -155,7 +155,7 @@ def main(args):
     train_file, val_file, test_file = build_dataset(args.dataset, args.data_path, args.partition)
 
 
-    train_sampler = WeightedRandomSampler(weights=train_file.balance_weigths(), num_samples=500000, replacement = True)
+    train_sampler = WeightedRandomSampler(weights=train_file.balance_weigths(), num_samples=15000, replacement = True)
     train_loader = DataLoader(
         dataset=train_file,
         batch_size=args.batch_size,
@@ -190,15 +190,20 @@ def main(args):
 
     similarity = CosineSimilarityMatrix()
 
-    lossf = {}
+    lossf, loss_weights = {}, {}
     lossf['l1_loss'] = L1Loss()
+    loss_weights['l1_loss'] = 0.005
     if args.loss == 'ndcg':
         lossf['ndcg_loss'] = DGCLoss(k=args.tau, penalize=args.penalize)
+        loss_weights['ndcg_loss'] = 1
     elif args.loss == 'map':
         lossf['map_loss'] = MAPLoss(k=args.tau)
+        loss_weights['map_loss'] = 1
     elif args.loss == 'combine':
         lossf['ndcg_loss'] = DGCLoss(k=args.tau, penalize=args.penalize)
         lossf['map_loss'] = MAPLoss(k=args.tau)
+        loss_weights['ndcg_loss'] = 1
+        loss_weights['map_loss'] = 1
     else:
         raise ValueError(f'loss {args.loss} not supported')
 
@@ -233,8 +238,8 @@ def main(args):
 
     if not args.test:
         for epoch in range(1, args.epochs+1):
-            train_stats = train(img_model, str_model, device, train_loader, optim, lossf, similarity, epoch)
-            val_stats = test(img_model, str_model, device, val_loader, lossf, criterion)
+            train_stats = train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch)
+            val_stats, str_embedding, img_embedding = test(img_model, str_model, device, val_loader, lossf, criterion)
 
             scheduler.step(val_stats['ndcg'].avg + val_stats['map'].avg)
 
@@ -248,8 +253,32 @@ def main(args):
                 # Test
                 writer.add_scalar('TestQbS/NDCG', val_stats['ndcg'].avg, epoch)
                 writer.add_scalar('TestQbS/MAP', val_stats['map'].avg, epoch)
+
                 writer.add_scalar('TestQbE/NDCG', val_stats['img_ndcg'].avg, epoch)
+                writer.add_scalar('TestQbE/MAP', val_stats['img_map'].avg, epoch)
+
                 writer.add_scalar('TestSED', val_stats['str_ndcg'].avg, epoch)
+
+                # Embedding
+                header = str_embedding[1].shape[0]*['String/'] + img_embedding[1].shape[0]*['Image/']
+                embedding = torch.cat((str_embedding[0], img_embedding[0]))
+                metadata = np.concatenate((str_embedding[1], img_embedding[1]))
+                metadata = np.core.defchararray.add(header, metadata)
+                writer.add_embedding(embedding, metadata=metadata, tag='Embedding', global_step=epoch)
+
+                # Confusion Matrix
+                sed = torch.zeros((str_embedding[0].shape[0], img_embedding[0].shape[0]), device=str_embedding[0].device)
+                for i, str1 in enumerate(str_embedding[1]):
+                    for j, str2 in enumerate(img_embedding[1]):
+                        sed[i,j] = Levenshtein.distance(str1, str2)
+                distance = cosine_similarity_matrix(str_embedding[0],img_embedding[0])
+
+                fig = plt.figure()
+                plt.scatter(sed.view(-1).tolist(), distance.view(-1).tolist())
+                plt.xlabel('String Edit Distance')
+                plt.ylabel('Learned Similarity')
+
+                writer.add_figure('Correlation', fig, global_step = epoch)
 
                 # Learning rate
                 writer.add_scalar('Learning Rate', optim.param_groups[0]['lr'], epoch)
