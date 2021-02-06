@@ -186,13 +186,13 @@ def main(args):
         {'params': img_model.parameters()},
         {'params': str_model.parameters()}
     ], args.learning_rate)
-    scheduler = ReduceLROnPlateau(optim, 'max', patience=25, cooldown=5, min_lr=1e-6, verbose=True)
+    scheduler = ReduceLROnPlateau(optim, 'max', factor=0.5, patience=25, cooldown=5, min_lr=1e-6, verbose=True)
 
     similarity = CosineSimilarityMatrix()
 
     lossf, loss_weights = {}, {}
     lossf['l1_loss'] = L1Loss()
-    loss_weights['l1_loss'] = 0.005
+    loss_weights['l1_loss'] = 0.01
     if args.loss == 'ndcg':
         lossf['ndcg_loss'] = DGCLoss(k=args.tau, penalize=args.penalize)
         loss_weights['ndcg_loss'] = 1
@@ -273,12 +273,30 @@ def main(args):
                         sed[i,j] = Levenshtein.distance(str1, str2)
                 distance = cosine_similarity_matrix(str_embedding[0],img_embedding[0])
 
+                sed = sed.view(-1).tolist()
+                distance = distance.view(-1).tolist()
                 fig = plt.figure()
-                plt.scatter(sed.view(-1).tolist(), distance.view(-1).tolist())
+                plt.scatter(sed, distance)
+                ax = plt.gca()
+                ax.set_ylim(0,1)
                 plt.xlabel('String Edit Distance')
                 plt.ylabel('Learned Similarity')
 
                 writer.add_figure('Correlation', fig, global_step = epoch)
+
+                data = []
+                sed, distance = np.array(sed), np.array(distance)
+                for used in np.unique(sed):
+                   data.append(distance[used == sed])
+
+                fig = plt.figure()
+                plt.boxplot(data)
+                ax = plt.gca()
+                ax.set_ylim(0,1)
+                plt.xlabel('String Edit Distance')
+                plt.ylabel('Learned Similarity')
+
+                writer.add_figure('Box Plot', fig, global_step = epoch)
 
                 # Learning rate
                 writer.add_scalar('Learning Rate', optim.param_groups[0]['lr'], epoch)
