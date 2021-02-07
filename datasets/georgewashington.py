@@ -88,6 +88,7 @@ def prepare_dataset(root, word_path, image_extension, partition):
 def build_dataset(root, image_extension='.png', transform=transforms.ToTensor, partition='cv1'):
     word_path = os.path.join(root, partition)
     if not os.path.isdir(word_path):
+        print(f'Preparing dataset at: {word_path}')
         prepare_dataset(root, word_path, image_extension, partition)
 
     with open(os.path.join(word_path, 'train', 'transcriptions.txt')) as f:

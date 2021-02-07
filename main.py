@@ -152,8 +152,7 @@ def main(args):
         device = torch.device(args.device)
         torch.cuda.manual_seed(args.seed)
 
-    train_file, val_file, test_file = build_dataset(args.dataset, args.data_path, args.partition)
-
+    train_file, val_file, test_file = build_dataset(args.dataset, args.data_path, partition=args.partition)
 
     train_sampler = WeightedRandomSampler(weights=train_file.balance_weigths(), num_samples=15000, replacement = True)
     train_loader = DataLoader(
