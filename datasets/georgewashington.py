@@ -25,11 +25,15 @@ class GeorgeWashington(Dataset):
         self.transform = transform
         self.char_to_idx = char_to_idx
         self.max_length=max_length
+        self.height = 100
 
     def __getitem__(self, index):
         word_id, label = self.words[index], self.labels[index]
 
         img = Image.open(os.path.join(self.root, word_id))
+        hpercent = self.height/float(img.size[1])
+        wsize = int((float(img.size[0])*float(hpercent)))
+        img = img.resize((wsize, self.height), Image.ANTIALIAS)
         if self.transform is not None:
             img = self.transform(img)
 

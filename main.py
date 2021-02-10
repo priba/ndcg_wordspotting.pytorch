@@ -19,7 +19,7 @@ import seaborn as sns
 
 from options import get_args_parser
 
-from models import ImageEmbedding, StringEmbedding
+from models import PHOCNet, ResNet12, StringEmbedding
 from logger import AverageMeter
 import Levenshtein
 
@@ -180,7 +180,13 @@ def main(args):
         collate_fn=collate_fn
     )
 
-    img_model = ImageEmbedding(args.out_dim).to(device)
+    if args.arch == 'phoc':
+        img_model = PHOCNet(args.out_dim).to(device)
+    elif args.arch == 'resnet':
+        img_model = ResNet12(args.out_dim).to(device)
+    else:
+        raise ValueError(f'architecture {args.arch} not supported')
+
     str_model = StringEmbedding(args.out_dim, train_file.voc_size()).to(device)
 
     optim = torch.optim.Adam([
