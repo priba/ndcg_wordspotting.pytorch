@@ -77,6 +77,8 @@ def train(img_model, str_model, device, train_loader, optim, lossf, loss_weights
 
         stats['train_loss'].update(loss.item(), bz)
         stats['img_loss'].update(loss_img.item(), bz)
+        if torch.is_tensor(loss_str):
+            loss_str = loss_str.item()
         stats['str_loss'].update(loss_str.item(), bz)
         stats['cross_loss'].update(loss_cross.item(), bz)
 
@@ -185,7 +187,7 @@ def main(args):
         {'params': img_model.parameters()},
         {'params': str_model.parameters()}
     ], args.learning_rate)
-    scheduler = ReduceLROnPlateau(optim, 'max', factor=0.5, patience=25, cooldown=5, min_lr=1e-6, verbose=True)
+    scheduler = ReduceLROnPlateau(optim, 'max', factor=0.5, patience=15, cooldown=5, min_lr=1e-6, verbose=True)
 
     similarity = CosineSimilarityMatrix()
 
@@ -245,9 +247,9 @@ def main(args):
             if args.save is not None:
                 # Train
                 writer.add_scalar('Loss/Global', train_stats['train_loss'].avg, epoch)
-                writer.add_scalar('Loss/Image', train_stats['train_loss'].avg, epoch)
-                writer.add_scalar('Loss/String', train_stats['train_loss'].avg, epoch)
-                writer.add_scalar('Loss/Cross', train_stats['train_loss'].avg, epoch)
+                writer.add_scalar('Loss/Image', train_stats['img_loss'].avg, epoch)
+                writer.add_scalar('Loss/String', train_stats['str_loss'].avg, epoch)
+                writer.add_scalar('Loss/Cross', train_stats['cross_loss'].avg, epoch)
 
                 # Test
                 writer.add_scalar('TestQbS/NDCG', val_stats['ndcg'].avg, epoch)

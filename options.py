@@ -30,7 +30,7 @@ def get_args_parser():
     parser.add_argument('--save', '-s', type=str, default=None, help='Folder to save checkpoints.')
     parser.add_argument('--load', '-l', type=str, default=None, help='Checkpoint path to resume / test.')
     parser.add_argument('--test', '-t', action='store_true', help='Test only flag.')
-    parser.add_argument('--early_stop', '-es', type=int, default=50, help='Early stopping epochs.')
+    parser.add_argument('--early_stop', '-es', type=int, default=25, help='Early stopping epochs.')
 
     # Others
     parser.add_argument('--device', default='cuda',

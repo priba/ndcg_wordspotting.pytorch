@@ -60,7 +60,7 @@ def dgc_loss(ranking: Tensor, gt: Tensor, mask_diagonal: Tensor = None, k: float
     ndcg = dcg / idcg
 
     if ndcg.numel() == 0:
-        return torch.tensor(1)
+        return torch.tensor(1, device=ranking.device)
 
     return 1 - ndcg.mean()
 
@@ -108,7 +108,7 @@ def map_loss(ranking: Tensor, gt: Tensor, mask_diagonal: Tensor = None, k: float
     num_positives = num_positives[num_positives>0]
     ap = ap/num_positives
     if torch.numel(ap) == 0:
-        return torch.tensor(1)
+        return torch.tensor(1, device=ranking.device)
     return 1-ap.mean()
 
 class L1Loss(nn.Module):
