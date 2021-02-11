@@ -32,7 +32,7 @@ class Block(nn.Module):
 
 class ResNet12(nn.Module):
     def __init__(self, n_out, in_channels=1, gpp_type='tpp', pooling_levels=3, pool_type='max_pool'):
-        super(ImageEmbedding, self).__init__()
+        super(ResNet12, self).__init__()
         self.block1 = Block(in_channels, 64)
         self.block2 = Block(64, 128)
         self.block3 = Block(128, 256)
@@ -60,7 +60,7 @@ class ResNet12(nn.Module):
 
 class PHOCNet(nn.Module):
     def __init__(self, n_out, in_channels=1, gpp_type='tpp', pooling_levels=3, pool_type='max_pool'):
-        super(ImageEmbeddingPhocNet, self).__init__()
+        super(PHOCNet, self).__init__()
 
         self.conv = nn.Sequential(
             # [BATCH_SIZE, 1, w, h]

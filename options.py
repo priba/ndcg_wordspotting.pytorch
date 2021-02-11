@@ -19,6 +19,7 @@ def get_args_parser():
     parser.add_argument('--batch_size', '-bz', default=64, type=int)
     parser.add_argument('--weight_decay', default=1e-4, type=float)
     parser.add_argument('--epochs', default=300, type=int)
+    parser.add_argument('--arch', default='resnet', choices=['phoc', 'resnet'])
 
     # Loss
     parser.add_argument('--loss', default='ndcg', type=str, choices=('ndcg', 'map', 'combine'),

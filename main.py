@@ -79,7 +79,7 @@ def train(img_model, str_model, device, train_loader, optim, lossf, loss_weights
         stats['img_loss'].update(loss_img.item(), bz)
         if torch.is_tensor(loss_str):
             loss_str = loss_str.item()
-        stats['str_loss'].update(loss_str.item(), bz)
+        stats['str_loss'].update(loss_str, bz)
         stats['cross_loss'].update(loss_cross.item(), bz)
 
         if step % 1500 == 0:
@@ -267,11 +267,11 @@ def main(args):
                 writer.add_scalar('TestSED', val_stats['str_ndcg'].avg, epoch)
 
                 # Embedding
-                header = str_embedding[1].shape[0]*['String/'] + img_embedding[1].shape[0]*['Image/']
-                embedding = torch.cat((str_embedding[0], img_embedding[0]))
-                metadata = np.concatenate((str_embedding[1], img_embedding[1]))
-                metadata = np.core.defchararray.add(header, metadata)
-                writer.add_embedding(embedding, metadata=metadata, tag='Embedding', global_step=epoch)
+                #header = str_embedding[1].shape[0]*['String/'] + img_embedding[1].shape[0]*['Image/']
+                #embedding = torch.cat((str_embedding[0], img_embedding[0]))
+                #metadata = np.concatenate((str_embedding[1], img_embedding[1]))
+                #metadata = np.core.defchararray.add(header, metadata)
+                #writer.add_embedding(embedding, metadata=metadata, tag='Embedding', global_step=epoch)
 
                 # Confusion Matrix
                 sed = torch.zeros((str_embedding[0].shape[0], img_embedding[0].shape[0]), device=str_embedding[0].device)
