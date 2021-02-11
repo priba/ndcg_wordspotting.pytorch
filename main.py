@@ -266,13 +266,6 @@ def main(args):
 
                 writer.add_scalar('TestSED', val_stats['str_ndcg'].avg, epoch)
 
-                # Embedding
-                #header = str_embedding[1].shape[0]*['String/'] + img_embedding[1].shape[0]*['Image/']
-                #embedding = torch.cat((str_embedding[0], img_embedding[0]))
-                #metadata = np.concatenate((str_embedding[1], img_embedding[1]))
-                #metadata = np.core.defchararray.add(header, metadata)
-                #writer.add_embedding(embedding, metadata=metadata, tag='Embedding', global_step=epoch)
-
                 # Confusion Matrix
                 sed = torch.zeros((str_embedding[0].shape[0], img_embedding[0].shape[0]), device=str_embedding[0].device)
                 for i, str1 in enumerate(str_embedding[1]):
@@ -344,7 +337,40 @@ def main(args):
         img_model.load_state_dict(checkpoint['img_state_dict'])
         str_model.load_state_dict(checkpoint['str_state_dict'])
 
-    test(img_model, str_model, device, test_loader, lossf, criterion)
+    test_stats, str_embedding, img_embedding = test(img_model, str_model, device, test_loader, lossf, criterion)
+
+    if args.save is not None:
+        # Embedding
+        header = str_embedding[1].shape[0]*['String/'] + img_embedding[1].shape[0]*['Image/']
+        embedding = torch.cat((str_embedding[0], img_embedding[0]))
+        metadata = np.concatenate((str_embedding[1], img_embedding[1]))
+        metadata = np.core.defchararray.add(header, metadata)
+        writer.add_embedding(embedding, metadata=metadata, tag='test/Embedding', global_step=0)
+
+        # Confusion Matrix
+        sed = torch.zeros((str_embedding[0].shape[0], img_embedding[0].shape[0]), device=str_embedding[0].device)
+        for i, str1 in enumerate(str_embedding[1]):
+            for j, str2 in enumerate(img_embedding[1]):
+                sed[i,j] = Levenshtein.distance(str1, str2)
+        distance = cosine_similarity_matrix(str_embedding[0],img_embedding[0])
+
+        sed = sed.view(-1).tolist()
+        distance = distance.view(-1).tolist()
+
+        data = []
+        sed, distance = np.array(sed), np.array(distance)
+        for used in np.unique(sed):
+           data.append(distance[used == sed])
+
+        fig = plt.figure()
+        plt.boxplot(data)
+        ax = plt.gca()
+        ax.set_ylim(0,1)
+        plt.xlabel('String Edit Distance')
+        plt.ylabel('Learned Similarity')
+
+        writer.add_figure('test/Box Plot', fig, global_step=0)
+
 
 if __name__ == '__main__':
     import argparse
