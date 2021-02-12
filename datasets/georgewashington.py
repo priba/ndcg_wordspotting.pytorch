@@ -43,7 +43,7 @@ class GeorgeWashington(Dataset):
 
         word = torch.tensor([self.char_to_idx[i] for i in label], dtype=torch.long)
         word = torch.cat((word, self.voc_size()*torch.ones(self.max_length-word.shape[0]))).long()
-        return img, word, label
+        return img, word, label, word_id
 
     def __len__(self):
         return len(self.words)
@@ -58,6 +58,10 @@ class GeorgeWashington(Dataset):
             count = np.count_nonzero(labels == l)
             weights[labels==l] = count
         return 1./weights
+
+    def query_to_tensor(self, input_string):
+        return torch.tensor([self.char_to_idx[i] for i in input_string], dtype=torch.long)
+
 
 def prepare_dataset(root, word_path, image_extension, partition):
     # Create word folder

@@ -22,6 +22,7 @@ from options import get_args_parser
 from models import PHOCNet, ResNet12, StringEmbedding
 from logger import AverageMeter
 import Levenshtein
+import pickle
 
 def train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch):
     img_model.train()
@@ -35,7 +36,7 @@ def train(img_model, str_model, device, train_loader, optim, lossf, loss_weights
     }
 
     start_time = time.time()
-    for step, (data, targets, labels) in enumerate(train_loader):
+    for step, (data, targets, labels, _) in enumerate(train_loader):
         optim.zero_grad()
 
         data, targets = data.to(device), targets.to(device)
@@ -115,8 +116,8 @@ def test(img_model, str_model, device, test_loader, lossf, criterion):
             stats[f'str_{k}'] = AverageMeter()
 
     with torch.no_grad():
-        queries, gallery, img_labels = [], [], []
-        for step, (data, targets, labels) in enumerate(test_loader):
+        queries, gallery, img_labels, img_id = [], [], [], []
+        for step, (data, targets, labels, word_id) in enumerate(test_loader):
             data, targets = data.to(device), targets.to(device)
 
             output_img = img_model(data)
@@ -125,6 +126,7 @@ def test(img_model, str_model, device, test_loader, lossf, criterion):
             queries.append(output_str)
             gallery.append(output_img)
             img_labels.append(list(labels))
+            img_id.append(list(word_id))
         gallery_labels = np.concatenate(img_labels)
         gallery = torch.cat(gallery)
 
@@ -138,10 +140,11 @@ def test(img_model, str_model, device, test_loader, lossf, criterion):
             if k != 'map':
                 stats[f'str_{k}'].update(criterion_func(queries, query_labels))
 
+        img_id = np.concatenate(img_id)
 
     stats_str = [f'{k}: {v.avg:.4f}' for k,v in stats.items()]
     print(f'\n* TEST set: {stats_str}')
-    return stats, (queries, query_labels), (gallery, gallery_labels)
+    return stats, (queries, query_labels), (gallery, gallery_labels, img_id)
 
 
 def main(args):
@@ -219,7 +222,7 @@ def main(args):
         'map' : meanavep,
     }
 
-    if args.save is not None:
+    if args.save is not None and not args.test:
         writer = SummaryWriter(log_dir=args.save)
         # Test transforms
         for i in range(5):
@@ -345,7 +348,11 @@ def main(args):
         embedding = torch.cat((str_embedding[0], img_embedding[0]))
         metadata = np.concatenate((str_embedding[1], img_embedding[1]))
         metadata = np.core.defchararray.add(header, metadata)
-        writer.add_embedding(embedding, metadata=metadata, tag='test/Embedding', global_step=0)
+
+        with open(os.path.join(args.save, 'str_embedding.pickle'), 'wb') as handle:
+            pickle.dump(str_embedding, handle)
+        with open(os.path.join(args.save, 'img_embedding.pickle'), 'wb') as handle:
+            pickle.dump(img_embedding, handle)
 
         # Confusion Matrix
         sed = torch.zeros((str_embedding[0].shape[0], img_embedding[0].shape[0]), device=str_embedding[0].device)
@@ -366,10 +373,10 @@ def main(args):
         plt.boxplot(data)
         ax = plt.gca()
         ax.set_ylim(0,1)
+        ax.set_xticklabels(list(range(0,int(max(sed))+1)))
         plt.xlabel('String Edit Distance')
         plt.ylabel('Learned Similarity')
-
-        writer.add_figure('test/Box Plot', fig, global_step=0)
+        plt.savefig(os.path.join(args.save, 'boxplot_test.png'))
 
 
 if __name__ == '__main__':
