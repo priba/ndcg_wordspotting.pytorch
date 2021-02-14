@@ -14,6 +14,7 @@ class IAM(Dataset):
         self.root = root
         self.subset = subset
         self.image_extension = image_extension
+        self.in_channels = 1
 
         transcription_name = 'transcriptions.txt'
         with open(os.path.join(root, transcription_name)) as f:

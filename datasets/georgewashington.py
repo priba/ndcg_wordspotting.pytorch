@@ -12,6 +12,7 @@ class GeorgeWashington(Dataset):
         self._dataset = 'George Washington'
         self.root = root
         self.subset = subset
+        self.in_channels = 1
 
         transcription_name = 'transcriptions.txt'
         if self.subset == 'validation':

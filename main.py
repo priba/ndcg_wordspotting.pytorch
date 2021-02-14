@@ -234,9 +234,9 @@ def main(args):
     )
 
     if args.arch == 'phoc':
-        img_model = PHOCNet(args.out_dim).to(device)
+        img_model = PHOCNet(args.out_dim, in_channels=train_file.in_channels).to(device)
     elif args.arch == 'resnet':
-        img_model = ResNet12(args.out_dim).to(device)
+        img_model = ResNet12(args.out_dim, in_channels=train_file.in_channels).to(device)
     else:
         raise ValueError(f'architecture {args.arch} not supported')
 

@@ -8,4 +8,8 @@ def build(dataset, root, transform=transforms.ToTensor, partition='cv1'):
         from .iam import build_dataset
         return build_dataset(root, transform=transforms.ToTensor)
 
+    elif dataset == 'iiit5k':
+        from .iiit5k import build_dataset
+        return build_dataset(root, transform=transforms.ToTensor)
+
     raise ValueError(f'dataset {dataset} not supported')
