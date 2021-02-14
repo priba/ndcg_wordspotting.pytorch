@@ -7,6 +7,7 @@ dependencies:
     - torchvision>=0.6
     - matplotlib
     - pandas
+    - nltk
     - seaborn
     - scikit-learn
     - tensorboard

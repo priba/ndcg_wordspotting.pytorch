@@ -11,11 +11,12 @@ import random
 import os
 
 from loss import DGCLoss, MAPLoss, L1Loss
-from utils import CosineSimilarityMatrix, cosine_similarity_matrix, ndcg, meanavep, collate_fn
+from utils import CosineSimilarityMatrix, cosine_similarity_matrix, ndcg, meanavep, CollateFn
 from datasets import build as build_dataset
 
 import pandas as pd
 import seaborn as sns
+import string
 
 from options import get_args_parser
 
@@ -23,6 +24,9 @@ from models import PHOCNet, ResNet12, StringEmbedding
 from logger import AverageMeter
 import Levenshtein
 import pickle
+import nltk
+from nltk.corpus import stopwords
+nltk.download('stopwords')
 
 def train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch):
     img_model.train()
@@ -108,6 +112,8 @@ def test(img_model, str_model, device, test_loader, lossf, criterion):
     img_model.eval()
     str_model.eval()
 
+    start_time = time.time()
+
     stats = {}
     for k, v in criterion.items():
         stats[k] = AverageMeter()
@@ -134,16 +140,55 @@ def test(img_model, str_model, device, test_loader, lossf, criterion):
         queries = torch.cat(queries)
         queries = queries[idx_queries]
 
+        if test_loader.dataset._dataset == 'IAM':
+            idx_without_stopwords = [i for i, w in enumerate(query_labels) if (w not in stopwords.words()) and (w not in string.punctuation)]
+            query_labels = query_labels[idx_without_stopwords]
+            queries = queries[idx_without_stopwords]
+
+            idx_without_stopwords = [i for i, w in enumerate(gallery_labels) if (w not in stopwords.words()) and (w not in string.punctuation)]
+            query_gallery_labels = gallery_labels[idx_without_stopwords]
+            query_gallery = gallery[idx_without_stopwords]
+        else:
+            query_gallery_labels = gallery_labels
+            query_gallery = gallery
+
+        # Ground-truth Ranking function
+        gt_cross = torch.zeros((query_labels.shape[0], gallery_labels.shape[0]), device=queries.device)
+        gt_img = torch.zeros((query_gallery_labels.shape[0], gallery_labels.shape[0]), device=queries.device)
+        gt_str = torch.zeros((query_labels.shape[0], query_labels.shape[0]), device=queries.device)
+
+        for i, str1 in enumerate(query_labels):
+            for j, str2 in enumerate(gallery_labels):
+                if str1 in string.punctuation or str2 in string.punctuation:
+                    gt_cross[i,j] = 15
+                    continue
+                gt_cross[i,j] = Levenshtein.distance(str1, str2)
+
+            for j, str2 in enumerate(query_labels):
+                if str1 in string.punctuation or str2 in string.punctuation:
+                    gt_str[i,j] = 15
+                    continue
+                gt_str[i,j] = Levenshtein.distance(str1, str2)
+
+        for i, str1 in enumerate(query_gallery_labels):
+            for j, str2 in enumerate(gallery_labels):
+                if str1 in string.punctuation or str2 in string.punctuation:
+                    gt_str[i,j] = 15
+                    continue
+                gt_img[i,j] = Levenshtein.distance(str1, str2)
+
         for k, criterion_func in criterion.items():
-            stats[k].update(criterion_func(queries, query_labels, gallery=gallery, gallery_labels=gallery_labels))
-            stats[f'img_{k}'].update(criterion_func(gallery, gallery_labels))
+            stats[k].update(criterion_func(queries, gt_cross, gallery=gallery))
+            stats[f'img_{k}'].update(criterion_func(query_gallery, gt_img, gallery, drop_first=True))
             if k != 'map':
-                stats[f'str_{k}'].update(criterion_func(queries, query_labels))
+                stats[f'str_{k}'].update(criterion_func(queries, gt_str))
 
         img_id = np.concatenate(img_id)
 
     stats_str = [f'{k}: {v.avg:.4f}' for k,v in stats.items()]
     print(f'\n* TEST set: {stats_str}')
+    end_time = time.time()
+    print(f'TOTAL-TEST-TIME: {round(end_time-start_time)}', end='\n')
     return stats, (queries, query_labels), (gallery, gallery_labels, img_id)
 
 
@@ -160,27 +205,32 @@ def main(args):
     train_file, val_file, test_file = build_dataset(args.dataset, args.data_path, partition=args.partition)
 
     train_sampler = WeightedRandomSampler(weights=train_file.balance_weigths(), num_samples=15000, replacement = True)
+
+    collate = CollateFn(train_file.voc_size())
     train_loader = DataLoader(
         dataset=train_file,
         batch_size=args.batch_size,
         sampler=train_sampler,
         num_workers=args.num_workers,
         drop_last=True,
-        collate_fn=collate_fn
+        collate_fn=collate.collate_fn,
+        pin_memory=True
     )
     val_loader = DataLoader(
         dataset=val_file,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
-        collate_fn=collate_fn
+        collate_fn=collate.collate_fn,
+        pin_memory=True
     )
     test_loader = DataLoader(
         dataset=test_file,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
-        collate_fn=collate_fn
+        collate_fn=collate.collate_fn,
+        pin_memory=True
     )
 
     if args.arch == 'phoc':
@@ -226,10 +276,10 @@ def main(args):
         writer = SummaryWriter(log_dir=args.save)
         # Test transforms
         for i in range(5):
-            image, _, _ = train_file[0]
+            image, _, _, _ = train_file[0]
             writer.add_image('Train/Images', image, i)
 
-            image, _, _ = test_file[0]
+            image, _, _, _ = test_file[0]
             writer.add_image('Test/Images', image, i)
 
     best_stats = {'ndcg': 0, 'map': 0}
@@ -248,7 +298,7 @@ def main(args):
 
     if not args.test:
         for epoch in range(1, args.epochs+1):
-            train_stats = train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch)
+#            train_stats = train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch)
             val_stats, str_embedding, img_embedding = test(img_model, str_model, device, val_loader, lossf, criterion)
 
             scheduler.step(val_stats['ndcg'].avg + val_stats['map'].avg)

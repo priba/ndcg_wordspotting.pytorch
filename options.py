@@ -10,7 +10,7 @@ def get_args_parser():
     parser = argparse.ArgumentParser('Evaluate Word Spotting Rankings')
 
     # Dataset
-    parser.add_argument('--dataset', default='gw')
+    parser.add_argument('--dataset', default='gw', choices=('gw', 'iam'))
     parser.add_argument('--partition', default='cv1', choices=['cv1', 'cv2', 'cv3', 'cv4'])
     parser.add_argument('--data_path', type=str)
 

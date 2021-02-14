@@ -6,16 +6,16 @@ import os
 from xml.dom import minidom
 import random
 import numpy as np
+import string
 
-class GeorgeWashington(Dataset):
-    def __init__(self, root, char_to_idx, transform=transforms.ToTensor(), max_length=10, subset='train'):
-        self._dataset = 'George Washington'
+class IAM(Dataset):
+    def __init__(self, root, char_to_idx, transform=transforms.ToTensor(), max_length=10, subset='train', image_extension = '.png'):
+        self._dataset = 'IAM'
         self.root = root
         self.subset = subset
+        self.image_extension = image_extension
 
         transcription_name = 'transcriptions.txt'
-        if self.subset == 'validation':
-            transcription_name = 'transcriptions_val.txt'
         with open(os.path.join(root, transcription_name)) as f:
             transcriptions = f.read().splitlines()
         word_list = [i.split() for i in transcriptions]
@@ -34,7 +34,7 @@ class GeorgeWashington(Dataset):
     def __getitem__(self, index):
         word_id, label = self.words[index], self.labels[index]
 
-        img = Image.open(os.path.join(self.root, word_id))
+        img = Image.open(os.path.join(self.root, word_id + self.image_extension))
         hpercent = self.height/float(img.size[1])
         wsize = int((float(img.size[0])*float(hpercent)))
         img = img.resize((wsize, self.height), Image.ANTIALIAS)
@@ -61,62 +61,81 @@ class GeorgeWashington(Dataset):
     def query_to_tensor(self, input_string):
         return torch.tensor([self.char_to_idx[i] for i in input_string], dtype=torch.long)
 
+def readset(set_name):
+    with open(f'./datasets/iam/{set_name}.txt', 'r') as f:
+        lines = f.read().splitlines()
+    return lines
 
-def prepare_dataset(root, word_path, image_extension, partition):
+def prepare_dataset(root, word_path, image_extension):
     # Create word folder
     os.mkdir(word_path)
+    os.mkdir(os.path.join(word_path, 'train'))
+    os.mkdir(os.path.join(word_path, 'validation'))
+    os.mkdir(os.path.join(word_path, 'test'))
 
-    previous_image_name = ''
-    for subset in ['train', 'test']:
-        os.mkdir(os.path.join(word_path,subset))
+    train_lines = readset('trainset')
+    val_lines = readset('validationset1') # + readset('validationset2')
+    test_lines = readset('testset')
 
-        xmldoc = minidom.parse(f'./datasets/georgewashington/gw_{partition}_{subset}.xml')
-        spotlist = xmldoc.getElementsByTagName('spot')
+    train_list, val_list, test_list = [], [], []
 
-        subset_list = []
-        for word_id, spot in enumerate(spotlist):
-            # Get image id
-            img_id = spot.attributes['image'].value.replace('.png', '')
-            image_name = img_id + '.tif'
+    with open(os.path.join(root, 'ascii', 'words.txt'), 'r') as f:
+        iam_words = f.read().splitlines()
+    iam_words = [w for w in iam_words if not w.startswith('#')]
 
-            # Read image
-            if image_name != previous_image_name:
-                image_name_previous = image_name
-                img = Image.open(os.path.join(root, image_name))
+    current_form = ''
+    for w in iam_words:
+        w_list = w.split()
+        if w_list[1] == 'ok':
+            w_id = w_list[0]
+            w_id_split = w_id.split('-')
+            form_id = w_id_split[0] + '-' + w_id_split[1]
+            line_id = form_id + '-' + w_id_split[2]
 
-            x1 = int(spot.attributes['x'].value)
-            y1 = int(spot.attributes['y'].value)
-            x2 = x1 + int(spot.attributes['w'].value)
-            y2 = y1 + int(spot.attributes['h'].value)
-            img_word = img.crop(box=(x1,y1,x2,y2))
+            x, y, w, h = int(w_list[3]), int(w_list[4]), int(w_list[5]), int(w_list[6])
+            if x==-1 or y==-1 or w==-1 or h==-1:
+                continue
 
-            img_word_name = f'{img_id}_{word_id:04d}{image_extension}'
-            img_word.save(os.path.join(word_path, subset, img_word_name))
+            transcription = ''.join(w_list[8:]).lower()
+            transcription = transcription.translate(str.maketrans('', '', string.punctuation))
+            if len(transcription) == 0:
+                transcription = '-'
+            if line_id in train_lines:
+                subset = 'train'
+                train_list.append(f'{w_id} {transcription}\n')
+            elif line_id in val_lines:
+                subset = 'validation'
+                val_list.append(f'{w_id} {transcription}\n')
+            elif line_id in test_lines:
+                subset = 'test'
+                test_list.append(f'{w_id} {transcription}\n')
+            else:
+                continue
 
-            subset_list.append(f'{img_word_name} {spot.attributes["word"].value}\n')
+            image_file = os.path.join(root, 'forms', form_id + image_extension)
+            if current_form != image_file:
+                img_form = Image.open(image_file)
+                current_form = image_file
 
-        if subset=='train':
-            random.shuffle(subset_list)
+            img_word = img_form.crop(box=(x,y,x+w,y+h))
 
-            train_list = subset_list[:-round(len(subset_list)*0.15)]
-            save_transcription(word_path, 'train', train_list)
+            img_word.save(os.path.join(word_path, subset, w_id + image_extension))
 
-            validation_list = subset_list[-round(len(subset_list)*0.15):]
-            save_transcription(word_path, 'train', validation_list, transcription_name='transcriptions_val.txt')
-        else:
-            save_transcription(word_path, 'test', subset_list)
+    save_transcription(word_path, 'train', train_list)
+    save_transcription(word_path, 'validation', val_list)
+    save_transcription(word_path, 'test', test_list)
+
 
 def save_transcription(word_path, subset, subset_list, transcription_name='transcriptions.txt'):
     with open(os.path.join(word_path, subset, transcription_name), 'w') as f_trans:
         for line in subset_list:
             f_trans.write(line)
 
-
-def build_dataset(root, image_extension='.png', transform=transforms.ToTensor, partition='cv1'):
-    word_path = os.path.join(root, partition)
+def build_dataset(root, image_extension='.png', transform=transforms.ToTensor):
+    word_path = os.path.join(root, 'word_level')
     if not os.path.isdir(word_path):
         print(f'Preparing dataset at: {word_path}')
-        prepare_dataset(root, word_path, image_extension, partition)
+        prepare_dataset(root, word_path, image_extension)
 
     with open(os.path.join(word_path, 'train', 'transcriptions.txt')) as f:
         train_transcriptions = f.read().splitlines()
@@ -138,7 +157,7 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor, p
         transforms.ToTensor(),
     ])
     for i in train_transcriptions:
-        img = Image.open(os.path.join(word_path, 'train', f'{i[0]}'))
+        img = Image.open(os.path.join(word_path, 'train', i[0] + image_extension))
         img = transform(img)
         mean.append(img.mean())
         std.append(img.std())
@@ -152,7 +171,7 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor, p
     ])
 
     # Prepare Data
-    train_file = GeorgeWashington(
+    train_file = IAM(
         root=os.path.join(word_path, 'train'),
         transform=transform,
         char_to_idx=dic,
@@ -164,14 +183,14 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor, p
         transforms.ToTensor(),
         transforms.Normalize((mean.item()), (std.item())),
     ])
-    val_file = GeorgeWashington(
-        root=os.path.join(word_path, 'train'),
+    val_file = IAM(
+        root=os.path.join(word_path, 'validation'),
         transform=transform,
         char_to_idx=dic,
         max_length=max_length,
         subset='validation',
     )
-    test_file = GeorgeWashington(
+    test_file = IAM(
         root=os.path.join(word_path, 'test'),
         transform=transform,
         char_to_idx=dic,

@@ -33,12 +33,19 @@ class NestedTensor(object):
     def __repr__(self):
         return str(self.tensors)
 
-def collate_fn(batch):
-    batch = list(zip(*batch))
-    batch[0] = nested_tensor_from_tensor_list(batch[0])
-    batch[1] = torch.stack(batch[1])
-    return tuple(batch)
+class CollateFn():
+    def __init__(self, voc_size):
+        self.voc_size = voc_size
 
+    def collate_fn(self, batch):
+        batch = list(zip(*batch))
+        batch[0] = nested_tensor_from_tensor_list(batch[0])
+        seq_len = [x.shape[0] for x in batch[1]]
+        padded_sequences = self.voc_size*torch.ones(len(batch[1]), max(seq_len), dtype=torch.long)
+        for i, x in enumerate(batch[1]):
+            padded_sequences[i, :seq_len[i]] = x
+        batch[1] = padded_sequences
+        return tuple(batch)
 
 def _max_by_axis(the_list):
     # type: (List[List[int]]) -> List[int]
@@ -115,24 +122,25 @@ def cosine_similarity_matrix(x1: Tensor, x2: Tensor, dim: int = 1, eps: float = 
 
     return sim
 
-def meanavep(queries, labels, gallery=None, gallery_labels=None, reducefn='mean'):
+def meanavep(queries, gt, gallery=None, reducefn='mean', drop_first=False):
     # Similarity matrix
     if gallery is not None:
         ranking = cosine_similarity_matrix(queries, gallery)
+        if drop_first:
+            idx_max = ranking.argsort(1, descending=True)[:,0]
+            mask = torch.ones_like(ranking).scatter_(1, idx_max.unsqueeze(1), 0.).bool()
+            ranking = ranking[mask].view((ranking.shape[0], ranking.shape[1]-1))
     else:
         ranking = cosine_similarity_matrix(queries, queries)
-        mask_diagonal = ~ torch.eye(ranking.shape[0]).bool()
-        ranking = ranking[mask_diagonal].view(ranking.shape[0], ranking.shape[0]-1)
+        mask = ~ torch.eye(ranking.shape[0]).bool()
+        ranking = ranking[mask].view(ranking.shape[0], ranking.shape[0]-1)
         gallery_labels = labels
 
     # Ground-truth comparison
-    gt = torch.zeros((labels.shape[0], gallery_labels.shape[0]), device=queries.device)
-    for i, str1 in enumerate(labels):
-        for j, str2 in enumerate(gallery_labels):
-            gt[i,j] = str1 == str2
+    gt = (gt==0).float()
 
-    if gallery is None:
-        gt = gt[mask_diagonal].view(gt.shape[0], gt.shape[0]-1)
+    if gallery is None or drop_first:
+        gt = gt[mask].view((ranking.shape[0], ranking.shape[1]))
 
     ap_sklearn = []
     for y_gt, y_scores in zip(gt, ranking):
@@ -149,24 +157,21 @@ def meanavep(queries, labels, gallery=None, gallery_labels=None, reducefn='mean'
     elif reducefn == 'none':
         return ap_sklearn
 
-def ndcg(queries, labels, gallery=None, gallery_labels=None, reducefn='mean', penalize: bool = False):
+def ndcg(queries, gt, gallery=None, reducefn='mean', penalize: bool = False, drop_first: bool =False):
     # Similarity matrix
     if gallery is not None:
         ranking = cosine_similarity_matrix(queries, gallery)
+        if drop_first:
+            idx_max = ranking.argsort(1, descending=True)[:,0]
+            mask = torch.ones_like(ranking).scatter_(1, idx_max.unsqueeze(1), 0.).bool()
+            ranking = ranking[mask].view((ranking.shape[0], ranking.shape[1]-1))
     else:
         ranking = cosine_similarity_matrix(queries, queries)
-        mask_diagonal = ~ torch.eye(ranking.shape[0]).bool()
-        ranking = ranking[mask_diagonal].view(ranking.shape[0], ranking.shape[0]-1)
-        gallery_labels = labels
+        mask = ~ torch.eye(ranking.shape[0]).bool()
+        ranking = ranking[mask].view(ranking.shape[0], ranking.shape[0]-1)
 
-    # Ground-truth Ranking function
-    gt = torch.zeros((labels.shape[0], gallery_labels.shape[0]), device=queries.device)
-    for i, str1 in enumerate(labels):
-        for j, str2 in enumerate(gallery_labels):
-            gt[i,j] = Levenshtein.distance(str1, str2)
-
-    if gallery is None:
-        gt = gt[mask_diagonal].view(gt.shape[0], gt.shape[0]-1)
+    if gallery is None or drop_first:
+        gt = gt[mask.bool()].view((ranking.shape[0], ranking.shape[1]))
 
     relevance = torch.clone(gt)
 
