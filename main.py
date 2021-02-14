@@ -298,7 +298,7 @@ def main(args):
 
     if not args.test:
         for epoch in range(1, args.epochs+1):
-#            train_stats = train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch)
+            train_stats = train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch)
             val_stats, str_embedding, img_embedding = test(img_model, str_model, device, val_loader, lossf, criterion)
 
             scheduler.step(val_stats['ndcg'].avg + val_stats['map'].avg)
