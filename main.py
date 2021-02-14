@@ -28,6 +28,9 @@ import nltk
 from nltk.corpus import stopwords
 nltk.download('stopwords')
 
+import multiprocessing
+from joblib import Parallel, delayed
+
 def train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch):
     img_model.train()
     str_model.train()
@@ -108,6 +111,17 @@ def train(img_model, str_model, device, train_loader, optim, lossf, loss_weights
     return stats
 
 
+# Define task for multiprocessing
+def multiprocessing_levenshtein(str1, gallery_labels, i):
+    out = torch.zeros(gallery_labels.shape)
+    for j, str2 in enumerate(gallery_labels[i+1:], start=i+1):
+        if str1 in string.punctuation or str2 in string.punctuation:
+            out[j] = 15
+            continue
+        out[j] = Levenshtein.distance(str1, str2)
+    return out
+
+
 def test(img_model, str_model, device, test_loader, lossf, criterion):
     img_model.eval()
     str_model.eval()
@@ -140,42 +154,28 @@ def test(img_model, str_model, device, test_loader, lossf, criterion):
         queries = torch.cat(queries)
         queries = queries[idx_queries]
 
+        # Ground-truth Ranking function
+        n_processors = min(multiprocessing.cpu_count(), 8)
+        gt_img = Parallel(n_jobs=n_processors)(delayed(multiprocessing_levenshtein)(str1, gallery_labels, i) for i, str1 in enumerate(gallery_labels))
+        gt_img = torch.stack(gt_img)
+        gt_img = gt_img + gt_img.t()
+
+        gt_cross = gt_img[idx_queries]
+        gt_str = gt_img[idx_queries][:, idx_queries]
+
         if test_loader.dataset._dataset == 'IAM':
             idx_without_stopwords = [i for i, w in enumerate(query_labels) if (w not in stopwords.words()) and (w not in string.punctuation)]
             query_labels = query_labels[idx_without_stopwords]
             queries = queries[idx_without_stopwords]
+            gt_cross = gt_img[idx_without_stopwords]
+            gt_str = gt_img[idx_without_stopwords][:, idx_without_stopwords]
 
             idx_without_stopwords = [i for i, w in enumerate(gallery_labels) if (w not in stopwords.words()) and (w not in string.punctuation)]
             query_gallery_labels = gallery_labels[idx_without_stopwords]
             query_gallery = gallery[idx_without_stopwords]
+            gt_img = gt_img[idx_without_stopwords]
         else:
-            query_gallery_labels = gallery_labels
             query_gallery = gallery
-
-        # Ground-truth Ranking function
-        gt_cross = torch.zeros((query_labels.shape[0], gallery_labels.shape[0]), device=queries.device)
-        gt_img = torch.zeros((query_gallery_labels.shape[0], gallery_labels.shape[0]), device=queries.device)
-        gt_str = torch.zeros((query_labels.shape[0], query_labels.shape[0]), device=queries.device)
-
-        for i, str1 in enumerate(query_labels):
-            for j, str2 in enumerate(gallery_labels):
-                if str1 in string.punctuation or str2 in string.punctuation:
-                    gt_cross[i,j] = 15
-                    continue
-                gt_cross[i,j] = Levenshtein.distance(str1, str2)
-
-            for j, str2 in enumerate(query_labels):
-                if str1 in string.punctuation or str2 in string.punctuation:
-                    gt_str[i,j] = 15
-                    continue
-                gt_str[i,j] = Levenshtein.distance(str1, str2)
-
-        for i, str1 in enumerate(query_gallery_labels):
-            for j, str2 in enumerate(gallery_labels):
-                if str1 in string.punctuation or str2 in string.punctuation:
-                    gt_str[i,j] = 15
-                    continue
-                gt_img[i,j] = Levenshtein.distance(str1, str2)
 
         for k, criterion_func in criterion.items():
             stats[k].update(criterion_func(queries, gt_cross, gallery=gallery))
@@ -298,7 +298,7 @@ def main(args):
 
     if not args.test:
         for epoch in range(1, args.epochs+1):
-#            train_stats = train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch)
+            train_stats = train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch)
             val_stats, str_embedding, img_embedding = test(img_model, str_model, device, val_loader, lossf, criterion)
 
             scheduler.step(val_stats['ndcg'].avg + val_stats['map'].avg)
