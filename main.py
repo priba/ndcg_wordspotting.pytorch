@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, WeightedRandomSampler
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import time
@@ -246,7 +246,7 @@ def main(args):
         {'params': img_model.parameters()},
         {'params': str_model.parameters()}
     ], args.learning_rate)
-    scheduler = ReduceLROnPlateau(optim, 'max', factor=0.5, patience=15, cooldown=5, min_lr=1e-6, verbose=True)
+    scheduler = MultiStepLR(optim, [100, 150], gamma=0.25, verbose=True)
 
     similarity = CosineSimilarityMatrix()
 
@@ -301,7 +301,7 @@ def main(args):
             train_stats = train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch)
             val_stats, str_embedding, img_embedding = test(img_model, str_model, device, val_loader, lossf, criterion)
 
-            scheduler.step(val_stats['ndcg'].avg + val_stats['map'].avg)
+            scheduler.step()
 
             if args.save is not None:
                 # Train
@@ -354,39 +354,17 @@ def main(args):
                 # Learning rate
                 writer.add_scalar('Learning Rate', optim.param_groups[0]['lr'], epoch)
 
-            es_count = 1
-            if val_stats['ndcg'].avg > best_stats['ndcg']:
-                best_stats['ndcg'] = val_stats['ndcg'].avg
-                early_stop_counter, es_count = 0, 0
-                if args.save is not None:
-                    torch.save({
-                        'epoch': epoch,
-                        'img_state_dict': img_model.state_dict(),
-                        'str_state_dict': str_model.state_dict(),
-                        'best_stats': best_stats,
-                        'optimizer': optim.state_dict(),
-                        }, os.path.join(args.save, 'checkpoint_ndcg.pth'))
-
-            if val_stats['map'].avg > best_stats['map']:
-                best_stats['map'] = val_stats['map'].avg
-                early_stop_counter, es_count = 0, 0
-                if args.save is not None:
-                    torch.save({
-                        'epoch': epoch,
-                        'img_state_dict': img_model.state_dict(),
-                        'str_state_dict': str_model.state_dict(),
-                        'best_stats': best_stats,
-                        'optimizer': optim.state_dict(),
-                        }, os.path.join(args.save, 'checkpoint_map.pth'))
-
-            early_stop_counter += es_count
-            if early_stop_counter >= args.early_stop:
-                print('Early Stop at epoch {}'.format(epoch))
-                break
+                torch.save({
+                    'epoch': epoch,
+                    'img_state_dict': img_model.state_dict(),
+                    'str_state_dict': str_model.state_dict(),
+                    'best_stats': best_stats,
+                    'optimizer': optim.state_dict(),
+                    }, os.path.join(args.save, 'checkpoint.pth'))
 
 
     if args.save is not None and not args.test:
-        checkpoint = torch.load(os.path.join(args.save, 'checkpoint_map.pth'), map_location=device)
+        checkpoint = torch.load(os.path.join(args.save, 'checkpoint.pth'), map_location=device)
         img_model.load_state_dict(checkpoint['img_state_dict'])
         str_model.load_state_dict(checkpoint['str_state_dict'])
 

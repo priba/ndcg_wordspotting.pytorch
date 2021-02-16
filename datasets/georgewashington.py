@@ -15,8 +15,6 @@ class GeorgeWashington(Dataset):
         self.in_channels = 1
 
         transcription_name = 'transcriptions.txt'
-        if self.subset == 'validation':
-            transcription_name = 'transcriptions_val.txt'
         with open(os.path.join(root, transcription_name)) as f:
             transcriptions = f.read().splitlines()
         word_list = [i.split() for i in transcriptions]
@@ -96,16 +94,7 @@ def prepare_dataset(root, word_path, image_extension, partition):
 
             subset_list.append(f'{img_word_name} {spot.attributes["word"].value}\n')
 
-        if subset=='train':
-            random.shuffle(subset_list)
-
-            train_list = subset_list[:-round(len(subset_list)*0.15)]
-            save_transcription(word_path, 'train', train_list)
-
-            validation_list = subset_list[-round(len(subset_list)*0.15):]
-            save_transcription(word_path, 'train', validation_list, transcription_name='transcriptions_val.txt')
-        else:
-            save_transcription(word_path, 'test', subset_list)
+        save_transcription(word_path, subset, subset_list)
 
 def save_transcription(word_path, subset, subset_list, transcription_name='transcriptions.txt'):
     with open(os.path.join(word_path, subset, transcription_name), 'w') as f_trans:
@@ -165,13 +154,6 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor, p
         transforms.ToTensor(),
         transforms.Normalize((mean.item()), (std.item())),
     ])
-    val_file = GeorgeWashington(
-        root=os.path.join(word_path, 'train'),
-        transform=transform,
-        char_to_idx=dic,
-        max_length=max_length,
-        subset='validation',
-    )
     test_file = GeorgeWashington(
         root=os.path.join(word_path, 'test'),
         transform=transform,
@@ -179,6 +161,7 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor, p
         max_length=max_length,
         subset='test',
     )
+    val_file = test_file
     print(f'Datasets created:\n\t*Train: {len(train_file)}\n\t*Validation: {len(val_file)}\n\t*Test: {len(test_file)}')
     return train_file, val_file, test_file
 

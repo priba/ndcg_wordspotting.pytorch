@@ -66,12 +66,6 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor):
     train_mat = train_mat['traindata'][0]
     test_mat = test_mat['testdata'][0]
 
-    # Split train into validation
-    val_samples = round(len(train_mat)*0.15)
-    np.random.shuffle(train_mat)
-    val_mat = train_mat[:val_samples]
-    train_mat = train_mat[val_samples:]
-
     train_transcriptions = [[w['ImgName'][0], w['GroundTruth'][0].lower()] for w in train_mat]
 
     dic = ''
@@ -116,14 +110,6 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor):
         transforms.ToTensor(),
         transforms.Normalize((mean.item()), (std.item())),
     ])
-    val_file = IIIT5k(
-        root=root,
-        data=val_mat,
-        transform=transform,
-        char_to_idx=dic,
-        max_length=max_length,
-        subset='validation',
-    )
     test_file = IIIT5k(
         root=root,
         data=test_mat,
@@ -132,6 +118,7 @@ def build_dataset(root, image_extension='.png', transform=transforms.ToTensor):
         max_length=max_length,
         subset='test',
     )
+    val_file = test_file
     print(f'Datasets created:\n\t*Train: {len(train_file)}\n\t*Validation: {len(val_file)}\n\t*Test: {len(test_file)}')
     return train_file, val_file, test_file
 
