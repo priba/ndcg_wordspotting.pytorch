@@ -22,6 +22,7 @@ from options import get_args_parser
 
 from models import PHOCNet, ResNet12, StringEmbedding
 from logger import AverageMeter
+from pretrain import pretrain_string
 import Levenshtein
 import pickle
 import nltk
@@ -109,7 +110,6 @@ def train(img_model, str_model, device, train_loader, optim, lossf, loss_weights
     print(f'TOTAL-TIME: {round(end_time-start_time)}', end='\n')
 
     return stats
-
 
 # Define task for multiprocessing
 def multiprocessing_levenshtein(str1, gallery_labels, i):
@@ -282,6 +282,11 @@ def main(args):
             image, _, _, _ = test_file[0]
             writer.add_image('Test/Images', image, i)
 
+    if (args.pretrain_path is not None) and not args.pretrain_str:
+        print('Loading pretrained string embedder')
+        checkpoint = torch.load(args.pretrain_path, map_location=device)
+        str_model.load_state_dict(checkpoint['str_state_dict'])
+
     best_stats = {'ndcg': 0, 'map': 0}
     start_epoch = 1
     early_stop_counter = 0
@@ -297,6 +302,13 @@ def main(args):
 
 
     if not args.test:
+        if args.pretrain_str and (args.dataset == 'iiit5k'):
+            str_model = pretrain_string(str_model, device, args.data_path, similarity, train_file.char_to_idx)
+            if args.pretrain_path is not None:
+                torch.save({
+                    'str_state_dict': str_model.state_dict(),
+                    }, os.path.join(args.pretrain_path, 'checkpoint.pth'))
+
         for epoch in range(1, args.epochs+1):
             train_stats = train(img_model, str_model, device, train_loader, optim, lossf, loss_weights, similarity, epoch)
             val_stats, str_embedding, img_embedding = test(img_model, str_model, device, val_loader, lossf, criterion)

@@ -29,6 +29,8 @@ def get_args_parser():
 
     # Checkpoint
     parser.add_argument('--save', '-s', type=str, default=None, help='Folder to save checkpoints.')
+    parser.add_argument('--pretrain_str', action='store_true', help='Test only flag.')
+    parser.add_argument('--pretrain_path', type=str, default=None, help='Folder to save and load the pretrained String embedding model.')
     parser.add_argument('--load', '-l', type=str, default=None, help='Checkpoint path to resume / test.')
     parser.add_argument('--test', '-t', action='store_true', help='Test only flag.')
     parser.add_argument('--early_stop', '-es', type=int, default=25, help='Early stopping epochs.')
