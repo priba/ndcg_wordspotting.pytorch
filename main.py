@@ -254,7 +254,7 @@ def main(args):
 
     lossf, loss_weights = {}, {}
     lossf['l1_loss'] = L1Loss()
-    loss_weights['l1_loss'] = 0.05
+    loss_weights['l1_loss'] = 0.5
     if args.loss == 'ndcg':
         lossf['ndcg_loss'] = DGCLoss(k=args.tau, penalize=args.penalize)
         loss_weights['ndcg_loss'] = 1

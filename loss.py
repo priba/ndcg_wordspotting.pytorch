@@ -119,6 +119,6 @@ class L1Loss(nn.Module):
         return l1_loss(query, gallery)
 
 def l1_loss(query: Tensor, gallery: Tensor):
-    loss = torch.abs(query - gallery).sum(-1)
+    loss = torch.abs(query.data - gallery).sum(-1)
     return loss.mean()
 
