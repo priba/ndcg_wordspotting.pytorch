@@ -20,7 +20,7 @@ import string
 
 from options import get_args_parser
 
-from models import PHOCNet, ResNet12, StringEmbedding
+from models import PHOCNet, ResNet12, ResNet34, StringEmbedding
 from logger import AverageMeter
 from pretrain import pretrain_string
 import Levenshtein
@@ -237,6 +237,8 @@ def main(args):
         img_model = PHOCNet(args.out_dim, in_channels=train_file.in_channels).to(device)
     elif args.arch == 'resnet':
         img_model = ResNet12(args.out_dim, in_channels=train_file.in_channels).to(device)
+    elif args.arch == 'resnet34':
+        img_model = ResNet34(args.out_dim, in_channels=train_file.in_channels).to(device)
     else:
         raise ValueError(f'architecture {args.arch} not supported')
 

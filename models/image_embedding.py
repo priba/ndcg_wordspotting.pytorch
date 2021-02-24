@@ -3,6 +3,30 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .gpp import GPP
 from utils import NestedTensor
+import torchvision.models as models
+
+
+class ResNet34(nn.Module):
+    def __init__(self, n_out, in_channels=1, gpp_type='tpp', pooling_levels=3, pool_type='max_pool'):
+        super(ResNet34, self).__init__()
+        resnet34 = models.resnet34(pretrained=True)
+        self.resnet34= nn.Sequential(*list(resnet34.children())[:-2])
+        self.fc = nn.Linear(512, n_out)
+
+    def forward(self, input_tensor):
+        y, mask = input_tensor.decompose()
+        assert mask is not None
+
+        if y.shape[1] == 1:
+            y = y.expand((y.shape[0], 3, *y.shape[2:]))
+        y = self.resnet34(y)
+
+        mask = F.interpolate(mask[None].float(), size=y.shape[-2:]).to(torch.bool)[0]
+        mask = ~mask
+
+        y = (mask.unsqueeze(1)*y).sum((-2,-1)) / mask.float().sum((-2,-1)).unsqueeze(-1)
+
+        return F.normalize(self.fc(y), dim=-1)
 
 
 class Block(nn.Module):
