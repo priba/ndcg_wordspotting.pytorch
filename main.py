@@ -247,14 +247,14 @@ def main(args):
     optim = torch.optim.Adam([
         {'params': img_model.parameters()},
         {'params': str_model.parameters()}
-    ], args.learning_rate)
+    ], args.learning_rate, weight_decay=0.0005)
     scheduler = MultiStepLR(optim, [100, 150], gamma=0.25, verbose=True)
 
     similarity = CosineSimilarityMatrix()
 
     lossf, loss_weights = {}, {}
     lossf['l1_loss'] = L1Loss()
-    loss_weights['l1_loss'] = 0.01
+    loss_weights['l1_loss'] = 0.05
     if args.loss == 'ndcg':
         lossf['ndcg_loss'] = DGCLoss(k=args.tau, penalize=args.penalize)
         loss_weights['ndcg_loss'] = 1
