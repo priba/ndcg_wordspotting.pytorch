@@ -30,7 +30,7 @@ class IAM(Dataset):
         self.transform = transform
         self.char_to_idx = char_to_idx
         self.max_length=max_length
-        self.height = 100
+        self.height = 75
 
     def __getitem__(self, index):
         word_id, label = self.words[index], self.labels[index]
