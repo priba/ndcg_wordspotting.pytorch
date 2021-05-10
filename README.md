@@ -30,7 +30,7 @@ python main.py --data_path /path/to/GeorgeWashington/ -t -l
 
 ## Data
 
-### George Washington
+### [George Washington](http://ciir.cs.umass.edu/downloads/old/data_sets.html)
 
 ###
 [IIIT5K](https://cvit.iiit.ac.in/research/projects/cvit-projects/the-iiit-5k-word-dataset)
