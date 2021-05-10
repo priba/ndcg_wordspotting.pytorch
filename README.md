@@ -1,7 +1,7 @@
 # Learning to Rank Words: Optimizing Ranking Metrics for Word Spotting
 
 <p align="center">
-<img src="./figures/summary.pdf" width="800">
+<img src="./figures/summary.png" width="800">
 </p>
 
 ## Introduction
