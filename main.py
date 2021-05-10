@@ -248,7 +248,7 @@ def main(args):
         {'params': img_model.parameters()},
         {'params': str_model.parameters()}
     ], args.learning_rate, weight_decay=0.0005)
-    scheduler = MultiStepLR(optim, [100, 150], gamma=0.25, verbose=True)
+    scheduler = MultiStepLR(optim, [25, 40], gamma=0.25, verbose=True)
 
     similarity = CosineSimilarityMatrix()
 
