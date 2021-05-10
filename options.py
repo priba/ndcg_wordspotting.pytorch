@@ -16,20 +16,20 @@ def get_args_parser():
 
     # Training
     parser.add_argument('--learning_rate', '-lr', default=1e-4, type=float)
-    parser.add_argument('--batch_size', '-bz', default=64, type=int)
+    parser.add_argument('--batch_size', '-bz', default=20, type=int)
     parser.add_argument('--weight_decay', default=1e-4, type=float)
-    parser.add_argument('--epochs', default=300, type=int)
-    parser.add_argument('--arch', default='resnet', choices=['phoc', 'resnet', 'resnet34'])
+    parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--arch', default='resnet34', choices=['phoc', 'resnet', 'resnet34'])
 
     # Loss
     parser.add_argument('--loss', default='ndcg', type=str, choices=('ndcg', 'map', 'combine'),
                         help="Select loss")
-    parser.add_argument('--tau', default=1e-3, type=float, help='Smooth factor')
+    parser.add_argument('--tau', default=1e-2, type=float, help='Smooth factor')
     parser.add_argument('--penalize', action='store_true', help='Penalize the relevance score')
 
     # Checkpoint
     parser.add_argument('--save', '-s', type=str, default=None, help='Folder to save checkpoints.')
-    parser.add_argument('--pretrain_str', action='store_true', help='Test only flag.')
+    parser.add_argument('--pretrain_str', action='store_true', help='If set true, the string embedding is pretrained (REPORTED results do not use it).')
     parser.add_argument('--pretrain_path', type=str, default=None, help='Folder to save and load the pretrained String embedding model.')
     parser.add_argument('--load', '-l', type=str, default=None, help='Checkpoint path to resume / test.')
     parser.add_argument('--test', '-t', action='store_true', help='Test only flag.')
