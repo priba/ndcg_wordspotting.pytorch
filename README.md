@@ -11,7 +11,7 @@
 ```bash
 git clone https://github.com/priba/ndcg_wordspotting.pytorch.git
 cd ndcg_wordspotting.pytorch
-conda env install -f environment.yml
+conda env create -f environment.yml
 conda activate ndcgws
 ```
 
